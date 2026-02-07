@@ -30,28 +30,28 @@ pub async fn setup_brp_client_with_debug(
     debug_router: Arc<DebugCommandRouter>,
 ) {
     info!("Setting up BRP client with debug command routing");
-    
+
     // Create debug handler
     let debug_handler = Arc::new(DebugBrpHandler::new(debug_router.clone()));
-    
+
     // Register with BRP client
     {
         let client = brp_client.read().await;
         client.register_handler(debug_handler).await;
     }
-    
+
     // Debug router is already accessible via the debug handler
     // No need to modify the client directly
-    
+
     info!("BRP client configured with extensible command handlers");
 }
 
 /// Migrate existing command processing to use new handler system
 pub async fn migrate_existing_commands(brp_client: Arc<RwLock<BrpClient>>) {
     info!("Migrating existing commands to new handler system");
-    
+
     // The CoreBrpHandler is already registered by default in BrpClient::new()
     // Additional migration can be added here if needed
-    
+
     info!("Command migration complete");
 }

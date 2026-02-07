@@ -471,7 +471,11 @@ impl ToolOrchestrator {
     }
 
     /// Execute a single pipeline step
-    pub(crate) async fn execute_step(&mut self, step: &PipelineStep, context: &mut ToolContext) -> StepResult {
+    pub(crate) async fn execute_step(
+        &mut self,
+        step: &PipelineStep,
+        context: &mut ToolContext,
+    ) -> StepResult {
         let start_time = Instant::now();
 
         // Check step condition

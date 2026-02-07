@@ -16,16 +16,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use rmcp::{model::*, tool, tool_router, tool_handler, handler::server::{ServerHandler, router::tool::ToolRouter, tool::Parameters}, schemars, Error as McpError};
+use rmcp::{
+    handler::server::{router::tool::ToolRouter, tool::Parameters, ServerHandler},
+    model::*,
+    schemars, tool, tool_handler, tool_router, Error as McpError,
+};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{sync::Arc, future::Future};
+use std::{future::Future, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::{error, info, debug};
-use schemars::JsonSchema;
+use tracing::{debug, error, info};
 
 use crate::brp_client::BrpClient;
-use crate::tools::{observe, experiment, hypothesis, anomaly, stress, replay};
+use crate::tools::{anomaly, experiment, hypothesis, observe, replay, stress};
 
 // Parameter structures for tools
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -86,11 +90,21 @@ pub struct ReplayRequest {
 }
 
 // Default value functions
-fn default_confidence() -> f32 { 0.8 }
-fn default_sensitivity() -> f32 { 0.7 }
-fn default_intensity() -> u8 { 5 }
-fn default_duration() -> f32 { 10.0 }
-fn default_speed() -> f32 { 1.0 }
+fn default_confidence() -> f32 {
+    0.8
+}
+fn default_sensitivity() -> f32 {
+    0.7
+}
+fn default_intensity() -> u8 {
+    5
+}
+fn default_duration() -> f32 {
+    10.0
+}
+fn default_speed() -> f32 {
+    1.0
+}
 
 /// Centralized tool schema definitions for better discoverability
 #[derive(Clone)]
@@ -101,7 +115,7 @@ pub struct BevyDebuggerTools {
 
 impl BevyDebuggerTools {
     pub fn new(brp_client: Arc<RwLock<BrpClient>>) -> Self {
-        Self { 
+        Self {
             brp_client,
             tool_router: Self::tool_router(),
         }
@@ -111,123 +125,186 @@ impl BevyDebuggerTools {
 #[tool_router]
 impl BevyDebuggerTools {
     /// Observe and query Bevy game state
-    #[tool(description = "Observe and query Bevy game state in real-time with optional reflection-based component inspection. Use this to inspect entities, components, resources, and game state. Enable 'reflection' parameter for deep component analysis including field inspection, type information, and custom inspectors for complex types like Option<T>, Vec<T>, HashMap<K,V>. Perfect for debugging entity spawning, component updates, and understanding your ECS architecture.")]
-    pub async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Observe and query Bevy game state in real-time with optional reflection-based component inspection. Use this to inspect entities, components, resources, and game state. Enable 'reflection' parameter for deep component analysis including field inspection, type information, and custom inspectors for complex types like Option<T>, Vec<T>, HashMap<K,V>. Perfect for debugging entity spawning, component updates, and understanding your ECS architecture."
+    )]
+    pub async fn observe(
+        &self,
+        Parameters(req): Parameters<ObserveRequest>,
+    ) -> Result<CallToolResult, McpError> {
         debug!("Executing observe query: {}", req.query);
-        
+
         let arguments = serde_json::json!({
             "query": req.query,
             "diff": req.diff,
             "detailed": req.detailed,
             "reflection": req.reflection,
         });
-        
+
         match observe::handle(arguments, self.brp_client.clone()).await {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(result.to_string())])),
+            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+                result.to_string(),
+            )])),
             Err(e) => {
                 error!("Observe tool error: {}", e);
-                Err(McpError::internal_error(format!("Observe tool error: {}", e), None))
+                Err(McpError::internal_error(
+                    format!("Observe tool error: {}", e),
+                    None,
+                ))
             }
         }
     }
 
     /// Run controlled experiments on game state
-    #[tool(description = "Run controlled experiments on your Bevy game to test behavior and performance. Useful for reproducing bugs, testing edge cases, and validating fixes.")]
-    pub async fn experiment(&self, Parameters(req): Parameters<ExperimentRequest>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Run controlled experiments on your Bevy game to test behavior and performance. Useful for reproducing bugs, testing edge cases, and validating fixes."
+    )]
+    pub async fn experiment(
+        &self,
+        Parameters(req): Parameters<ExperimentRequest>,
+    ) -> Result<CallToolResult, McpError> {
         debug!("Running experiment: {}", req.experiment_type);
-        
+
         let arguments = serde_json::json!({
             "type": req.experiment_type,
             "params": req.params,
             "duration": req.duration,
         });
-        
+
         match experiment::handle(arguments, self.brp_client.clone()).await {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(result.to_string())])),
+            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+                result.to_string(),
+            )])),
             Err(e) => {
                 error!("Experiment tool error: {}", e);
-                Err(McpError::internal_error(format!("Experiment tool error: {}", e), None))
+                Err(McpError::internal_error(
+                    format!("Experiment tool error: {}", e),
+                    None,
+                ))
             }
         }
     }
 
     /// Test hypotheses about game behavior
-    #[tool(description = "Test hypotheses about game behavior and state. Helps validate assumptions and understand why certain behaviors occur.")]
-    pub async fn hypothesis(&self, Parameters(req): Parameters<HypothesisRequest>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Test hypotheses about game behavior and state. Helps validate assumptions and understand why certain behaviors occur."
+    )]
+    pub async fn hypothesis(
+        &self,
+        Parameters(req): Parameters<HypothesisRequest>,
+    ) -> Result<CallToolResult, McpError> {
         debug!("Testing hypothesis: {}", req.hypothesis);
-        
+
         let arguments = serde_json::json!({
             "hypothesis": req.hypothesis,
             "confidence": req.confidence,
             "context": req.context,
         });
-        
+
         match hypothesis::handle(arguments, self.brp_client.clone()).await {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(result.to_string())])),
+            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+                result.to_string(),
+            )])),
             Err(e) => {
                 error!("Hypothesis tool error: {}", e);
-                Err(McpError::internal_error(format!("Hypothesis tool error: {}", e), None))
+                Err(McpError::internal_error(
+                    format!("Hypothesis tool error: {}", e),
+                    None,
+                ))
             }
         }
     }
 
     /// Detect anomalies in game behavior
-    #[tool(description = "Detect anomalies in game behavior, performance, and state. Automatically identifies issues like memory leaks, performance drops, and inconsistent state.")]
-    pub async fn detect_anomaly(&self, Parameters(req): Parameters<AnomalyRequest>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Detect anomalies in game behavior, performance, and state. Automatically identifies issues like memory leaks, performance drops, and inconsistent state."
+    )]
+    pub async fn detect_anomaly(
+        &self,
+        Parameters(req): Parameters<AnomalyRequest>,
+    ) -> Result<CallToolResult, McpError> {
         debug!("Running anomaly detection: {}", req.detection_type);
-        
+
         let arguments = serde_json::json!({
             "type": req.detection_type,
             "sensitivity": req.sensitivity,
             "window": req.window,
         });
-        
+
         match anomaly::handle(arguments, self.brp_client.clone()).await {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(result.to_string())])),
+            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+                result.to_string(),
+            )])),
             Err(e) => {
                 error!("Anomaly detection error: {}", e);
-                Err(McpError::internal_error(format!("Anomaly detection error: {}", e), None))
+                Err(McpError::internal_error(
+                    format!("Anomaly detection error: {}", e),
+                    None,
+                ))
             }
         }
     }
 
     /// Run stress tests
-    #[tool(description = "Run stress tests to find performance limits and bottlenecks. Helps identify when and why your game starts to lag or consume excessive resources.")]
-    pub async fn stress_test(&self, Parameters(req): Parameters<StressTestRequest>) -> Result<CallToolResult, McpError> {
-        info!("Starting stress test: {} at intensity {}", req.test_type, req.intensity);
-        
+    #[tool(
+        description = "Run stress tests to find performance limits and bottlenecks. Helps identify when and why your game starts to lag or consume excessive resources."
+    )]
+    pub async fn stress_test(
+        &self,
+        Parameters(req): Parameters<StressTestRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        info!(
+            "Starting stress test: {} at intensity {}",
+            req.test_type, req.intensity
+        );
+
         let arguments = serde_json::json!({
             "type": req.test_type,
             "intensity": req.intensity,
             "duration": req.duration,
             "detailed_metrics": req.detailed_metrics,
         });
-        
+
         match stress::handle(arguments, self.brp_client.clone()).await {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(result.to_string())])),
+            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+                result.to_string(),
+            )])),
             Err(e) => {
                 error!("Stress test error: {}", e);
-                Err(McpError::internal_error(format!("Stress test error: {}", e), None))
+                Err(McpError::internal_error(
+                    format!("Stress test error: {}", e),
+                    None,
+                ))
             }
         }
     }
 
     /// Record and replay game state
-    #[tool(description = "Record and replay game state for time-travel debugging. Capture game state at specific points and replay to understand how bugs occur.")]
-    pub async fn replay(&self, Parameters(req): Parameters<ReplayRequest>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Record and replay game state for time-travel debugging. Capture game state at specific points and replay to understand how bugs occur."
+    )]
+    pub async fn replay(
+        &self,
+        Parameters(req): Parameters<ReplayRequest>,
+    ) -> Result<CallToolResult, McpError> {
         info!("Replay action: {}", req.action);
-        
+
         let arguments = serde_json::json!({
             "action": req.action,
             "checkpoint_id": req.checkpoint_id,
             "speed": req.speed,
         });
-        
+
         match replay::handle(arguments, self.brp_client.clone()).await {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(result.to_string())])),
+            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+                result.to_string(),
+            )])),
             Err(e) => {
                 error!("Replay tool error: {}", e);
-                Err(McpError::internal_error(format!("Replay tool error: {}", e), None))
+                Err(McpError::internal_error(
+                    format!("Replay tool error: {}", e),
+                    None,
+                ))
             }
         }
     }

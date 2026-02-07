@@ -1,8 +1,8 @@
+use crate::brp_client::BrpClient;
 /// System Performance Profiler for comprehensive ECS profiling
 use crate::brp_messages::{
-    DebugCommand, DebugResponse, SystemMetrics, ProfileSample, SystemProfile,
+    DebugCommand, DebugResponse, ProfileSample, SystemMetrics, SystemProfile,
 };
-use crate::brp_client::BrpClient;
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -182,7 +182,7 @@ impl SystemProfiler {
         track_allocations: Option<bool>,
     ) -> Result<()> {
         let mut sessions = self.active_sessions.write().await;
-        
+
         // Check if already profiling
         if sessions.contains_key(&system_name) {
             return Err(Error::DebugError(format!(
@@ -216,7 +216,7 @@ impl SystemProfiler {
     /// Stop profiling a specific system
     pub async fn stop_profiling(&self, system_name: &str) -> Result<SystemProfile> {
         let mut sessions = self.active_sessions.write().await;
-        
+
         let session = sessions.remove(system_name).ok_or_else(|| {
             Error::DebugError(format!("System '{}' is not being profiled", system_name))
         })?;
@@ -258,7 +258,9 @@ impl SystemProfiler {
                     duration_ms,
                 })
             }
-            _ => Err(Error::DebugError("Unsupported profiling command".to_string())),
+            _ => Err(Error::DebugError(
+                "Unsupported profiling command".to_string(),
+            )),
         }
     }
 
@@ -270,7 +272,7 @@ impl SystemProfiler {
         allocations: Option<usize>,
     ) -> Result<()> {
         let mut sessions = self.active_sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(system_name) {
             // Check if session expired
             if session.started_at.elapsed() > session.duration {
@@ -332,10 +334,7 @@ impl SystemProfiler {
         let p95_time_us = durations[p95_index.min(durations.len() - 1)];
         let p99_time_us = durations[p99_index.min(durations.len() - 1)];
 
-        let total_allocations: usize = samples
-            .iter()
-            .filter_map(|s| s.allocations)
-            .sum();
+        let total_allocations: usize = samples.iter().filter_map(|s| s.allocations).sum();
 
         let allocation_rate = if !samples.is_empty() {
             total_allocations as f32 / samples.len() as f32
@@ -380,13 +379,17 @@ impl SystemProfiler {
         allocations: Option<usize>,
     ) {
         let mut history = self.frame_history.write().await;
-        
+
         // Get or create current frame
         let frame = history.get_or_create_current_frame();
-        
-        frame.system_times.insert(system_name.to_string(), execution_time);
+
+        frame
+            .system_times
+            .insert(system_name.to_string(), execution_time);
         if let Some(allocs) = allocations {
-            frame.system_allocations.insert(system_name.to_string(), allocs);
+            frame
+                .system_allocations
+                .insert(system_name.to_string(), allocs);
         }
     }
 
@@ -399,25 +402,26 @@ impl SystemProfiler {
     /// Get system dependencies
     async fn get_system_dependencies(&self, system_name: &str) -> Vec<String> {
         let graph = self.dependency_graph.read().await;
-        graph.dependencies.get(system_name)
+        graph
+            .dependencies
+            .get(system_name)
             .cloned()
             .unwrap_or_default()
     }
 
     /// Update system dependency graph
-    pub async fn update_dependency_graph(
-        &self,
-        system_name: String,
-        dependencies: Vec<String>,
-    ) {
+    pub async fn update_dependency_graph(&self, system_name: String, dependencies: Vec<String>) {
         let mut graph = self.dependency_graph.write().await;
-        
+
         // Update forward dependencies
-        graph.dependencies.insert(system_name.clone(), dependencies.clone());
-        
+        graph
+            .dependencies
+            .insert(system_name.clone(), dependencies.clone());
+
         // Update reverse dependencies
         for dep in &dependencies {
-            graph.dependents
+            graph
+                .dependents
                 .entry(dep.clone())
                 .or_insert_with(Vec::new)
                 .push(system_name.clone());
@@ -464,7 +468,7 @@ impl SystemProfiler {
     pub async fn export_profiling_data(&self, format: ExportFormat) -> Result<String> {
         let sessions = self.active_sessions.read().await;
         let history = self.frame_history.read().await;
-        
+
         match format {
             ExportFormat::Json => {
                 let data = serde_json::json!({
@@ -502,20 +506,22 @@ impl SystemProfiler {
                 })
             }).collect::<Vec<_>>()
         });
-        
+
         Ok(serde_json::to_string(&tracy_data)?)
     }
 
     /// Export data in CSV format
     async fn export_csv_format(&self, history: &FrameHistory) -> Result<String> {
         let mut csv = String::from("frame,system,duration_us,allocations\n");
-        
+
         for frame in &history.frames {
             for (system, duration) in &frame.system_times {
-                let allocations = frame.system_allocations.get(system)
+                let allocations = frame
+                    .system_allocations
+                    .get(system)
                     .map(|a| a.to_string())
                     .unwrap_or_else(|| "N/A".to_string());
-                
+
                 csv.push_str(&format!(
                     "{},{},{},{}\n",
                     frame.frame_number,
@@ -525,7 +531,7 @@ impl SystemProfiler {
                 ));
             }
         }
-        
+
         Ok(csv)
     }
 }
@@ -570,7 +576,7 @@ impl FrameHistory {
 
     fn create_new_frame(&mut self) {
         self.current_frame += 1;
-        
+
         let frame = FrameData {
             frame_number: self.current_frame,
             start_time: Instant::now(),
@@ -605,7 +611,7 @@ impl AnomalyDetector {
     fn check_anomaly(&mut self, system_name: &str, execution_time: Duration) {
         let time_ms = execution_time.as_millis() as f32;
         let average = self.moving_average.get_average();
-        
+
         if average > 0.0 && time_ms > average * self.threshold_multiplier {
             let anomaly = PerformanceAnomaly {
                 frame_number: 0, // Would get from frame history
@@ -615,20 +621,20 @@ impl AnomalyDetector {
                 severity: self.calculate_severity(time_ms, average),
                 detected_at_us: Instant::now().elapsed().as_micros() as u64,
             };
-            
+
             self.anomalies.push(anomaly);
-            
+
             // Keep only last 100 anomalies
             if self.anomalies.len() > 100 {
                 self.anomalies.remove(0);
             }
-            
+
             warn!(
                 "Performance anomaly detected in system '{}': {}ms (expected: {}ms)",
                 system_name, time_ms, average
             );
         }
-        
+
         self.moving_average.add_value(time_ms);
     }
 
@@ -695,7 +701,7 @@ mod tests {
         config.mcp_port = 3000;
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = SystemProfiler::new(brp_client);
-        
+
         assert!(profiler.config.max_overhead_percent > 0.0);
     }
 
@@ -705,23 +711,19 @@ mod tests {
         config.mcp_port = 3000;
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = SystemProfiler::new(brp_client);
-        
+
         // Start profiling
-        let result = profiler.start_profiling(
-            "test_system".to_string(),
-            Some(1000),
-            Some(false),
-        ).await;
+        let result = profiler
+            .start_profiling("test_system".to_string(), Some(1000), Some(false))
+            .await;
         assert!(result.is_ok());
-        
+
         // Try to start again (should fail)
-        let result = profiler.start_profiling(
-            "test_system".to_string(),
-            Some(1000),
-            Some(false),
-        ).await;
+        let result = profiler
+            .start_profiling("test_system".to_string(), Some(1000), Some(false))
+            .await;
         assert!(result.is_err());
-        
+
         // Stop profiling
         let result = profiler.stop_profiling("test_system").await;
         assert!(result.is_ok());
@@ -733,7 +735,7 @@ mod tests {
         config.mcp_port = 3000;
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = SystemProfiler::new(brp_client);
-        
+
         let samples = vec![
             ProfileSample {
                 timestamp: 1000,
@@ -751,9 +753,9 @@ mod tests {
                 allocations: Some(20),
             },
         ];
-        
+
         let metrics = profiler.calculate_metrics(&samples).await.unwrap();
-        
+
         assert_eq!(metrics.min_time_us, 100);
         assert_eq!(metrics.max_time_us, 200);
         assert_eq!(metrics.avg_time_us, 150);
@@ -763,16 +765,16 @@ mod tests {
     #[test]
     fn test_moving_average() {
         let mut avg = MovingAverage::new(3);
-        
+
         avg.add_value(10.0);
         assert_eq!(avg.get_average(), 10.0);
-        
+
         avg.add_value(20.0);
         assert_eq!(avg.get_average(), 15.0);
-        
+
         avg.add_value(30.0);
         assert_eq!(avg.get_average(), 20.0);
-        
+
         avg.add_value(40.0); // Should remove 10.0
         assert_eq!(avg.get_average(), 30.0);
     }
@@ -780,16 +782,16 @@ mod tests {
     #[test]
     fn test_anomaly_detection() {
         let mut detector = AnomalyDetector::new(1.5);
-        
+
         // Build baseline
         for _ in 0..10 {
             detector.check_anomaly("test_system", Duration::from_millis(10));
         }
-        
+
         // Normal execution
         detector.check_anomaly("test_system", Duration::from_millis(12));
         assert_eq!(detector.anomalies.len(), 0);
-        
+
         // Anomaly
         detector.check_anomaly("test_system", Duration::from_millis(30));
         assert_eq!(detector.anomalies.len(), 1);

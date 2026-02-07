@@ -21,7 +21,7 @@ use crate::circuit_breaker::{CircuitBreaker, CircuitState};
 use crate::config::Config;
 use crate::connection_pool::{ConnectionPool, PooledConnection};
 use crate::error::{Error, Result};
-use crate::heartbeat::{HeartbeatService};
+use crate::heartbeat::HeartbeatService;
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -69,7 +69,9 @@ impl BrpClientMetrics {
 
     /// Calculate uptime duration
     pub fn uptime(&self) -> Duration {
-        self.uptime_start.map(|start| start.elapsed()).unwrap_or_default()
+        self.uptime_start
+            .map(|start| start.elapsed())
+            .unwrap_or_default()
     }
 
     /// Check if client is meeting 99.9% uptime requirement
@@ -92,7 +94,7 @@ impl BrpClientV2 {
     pub fn new(config: Config) -> Result<Self> {
         // Validate configuration
         config.validate()?;
-        
+
         let connection_pool = ConnectionPool::new(config.clone());
         let circuit_breaker = CircuitBreaker::new(config.resilience.circuit_breaker.clone());
 
@@ -128,7 +130,7 @@ impl BrpClientV2 {
         }
 
         self.is_running.store(true, Ordering::Relaxed);
-        
+
         info!("BRP client v2 started successfully");
         Ok(())
     }
@@ -164,7 +166,7 @@ impl BrpClientV2 {
             let mut metrics = self.metrics.write().await;
             metrics.failed_requests += 1;
             metrics.circuit_breaker_trips += 1;
-            
+
             return Err(Error::Connection(
                 "Circuit breaker is open - service unavailable".to_string(),
             ));
@@ -194,7 +196,11 @@ impl BrpClientV2 {
     }
 
     /// Send request with exponential backoff retry
-    async fn send_request_with_retry(&self, request_id: Uuid, request: BrpRequest) -> Result<BrpResponse> {
+    async fn send_request_with_retry(
+        &self,
+        request_id: Uuid,
+        request: BrpRequest,
+    ) -> Result<BrpResponse> {
         let max_attempts = self.config.resilience.retry.max_attempts;
         let mut last_error = Error::Connection("No attempts made".to_string());
 
@@ -202,16 +208,19 @@ impl BrpClientV2 {
             match self.send_request_attempt(request_id, &request).await {
                 Ok(response) => {
                     if attempt > 1 {
-                        info!("Request {} succeeded on attempt {}/{}", request_id, attempt, max_attempts);
+                        info!(
+                            "Request {} succeeded on attempt {}/{}",
+                            request_id, attempt, max_attempts
+                        );
                     }
                     return Ok(response);
                 }
                 Err(e) => {
                     last_error = e;
-                    
+
                     if attempt < max_attempts {
                         let delay = self.calculate_backoff_delay(attempt - 1);
-                        
+
                         warn!(
                             "Request {} failed on attempt {}/{}: {}. Retrying in {:?}",
                             request_id, attempt, max_attempts, last_error, delay
@@ -229,18 +238,25 @@ impl BrpClientV2 {
             }
         }
 
-        error!("Request {} failed after {} attempts: {}", request_id, max_attempts, last_error);
+        error!(
+            "Request {} failed after {} attempts: {}",
+            request_id, max_attempts, last_error
+        );
         Err(last_error)
     }
 
     /// Single request attempt
-    async fn send_request_attempt(&self, request_id: Uuid, request: &BrpRequest) -> Result<BrpResponse> {
+    async fn send_request_attempt(
+        &self,
+        request_id: Uuid,
+        request: &BrpRequest,
+    ) -> Result<BrpResponse> {
         // Get connection from pool
         let mut connection = {
             let pool = self.connection_pool.lock().await;
             timeout(
                 self.config.resilience.connection_pool.connection_timeout,
-                pool.get_connection()
+                pool.get_connection(),
             )
             .await
             .map_err(|_| {
@@ -250,13 +266,16 @@ impl BrpClientV2 {
             })?
         }?;
 
-        debug!("Sending request {} using connection {}", request_id, connection.info.id);
+        debug!(
+            "Sending request {} using connection {}",
+            request_id, connection.info.id
+        );
 
         // Send request
-        let request_json = serde_json::to_string(request)
-            .map_err(Error::Json)?;
-            
-        connection.websocket
+        let request_json = serde_json::to_string(request).map_err(Error::Json)?;
+
+        connection
+            .websocket
             .send(Message::Text(request_json))
             .await
             .map_err(|e| Error::WebSocket(Box::new(e)))?;
@@ -264,7 +283,7 @@ impl BrpClientV2 {
         // Wait for response with timeout
         let response = timeout(
             self.config.resilience.request_timeout,
-            connection.websocket.next()
+            connection.websocket.next(),
         )
         .await
         .map_err(|_| Error::Connection("Request timeout".to_string()))?;
@@ -273,7 +292,9 @@ impl BrpClientV2 {
         let response_text = match response {
             Some(Ok(Message::Text(text))) => text,
             Some(Ok(Message::Close(_))) => {
-                return Err(Error::Connection("Connection closed during request".to_string()));
+                return Err(Error::Connection(
+                    "Connection closed during request".to_string(),
+                ));
             }
             Some(Err(e)) => {
                 return Err(Error::WebSocket(Box::new(e)));
@@ -287,8 +308,8 @@ impl BrpClientV2 {
         };
 
         // Parse response
-        let brp_response: BrpResponse = serde_json::from_str(&response_text)
-            .map_err(Error::Json)?;
+        let brp_response: BrpResponse =
+            serde_json::from_str(&response_text).map_err(Error::Json)?;
 
         // Return connection to pool
         {
@@ -307,7 +328,8 @@ impl BrpClientV2 {
         let max_delay = self.config.resilience.retry.max_delay;
 
         // Calculate exponential backoff
-        let delay_ms = (base_delay.as_millis() as f64 * (multiplier as f64).powi(attempt as i32)) as u64;
+        let delay_ms =
+            (base_delay.as_millis() as f64 * (multiplier as f64).powi(attempt as i32)) as u64;
         let delay = Duration::from_millis(delay_ms.min(max_delay.as_millis() as u64));
 
         // Add jitter if enabled
@@ -327,10 +349,11 @@ impl BrpClientV2 {
         } else {
             let current_avg = metrics.average_response_time;
             let count = metrics.successful_requests;
-            
+
             // Moving average calculation
             metrics.average_response_time = Duration::from_nanos(
-                ((current_avg.as_nanos() as u64 * (count - 1)) + new_duration.as_nanos() as u64) / count
+                ((current_avg.as_nanos() as u64 * (count - 1)) + new_duration.as_nanos() as u64)
+                    / count,
             );
         }
     }
@@ -353,7 +376,7 @@ impl BrpClientV2 {
 
         let metrics = self.metrics.read().await;
         let circuit_metrics = self.circuit_breaker.get_metrics();
-        
+
         // Healthy if circuit breaker is closed and success rate is good
         circuit_metrics.is_healthy() && metrics.success_rate() >= 95.0
     }
@@ -385,7 +408,7 @@ mod tests {
         let mut metrics = BrpClientMetrics::default();
         metrics.total_requests = 100;
         metrics.successful_requests = 95;
-        
+
         assert_eq!(metrics.success_rate(), 95.0);
         assert!(metrics.meets_uptime_sla(90.0));
         assert!(!metrics.meets_uptime_sla(99.0));
@@ -395,10 +418,10 @@ mod tests {
     async fn test_client_creation_and_validation() {
         let mut config = Config::default();
         config.resilience.circuit_breaker.failure_threshold = 0; // Invalid
-        
+
         let result = BrpClientV2::new(config);
         assert!(result.is_err());
-        
+
         let valid_config = Config::default();
         let client = BrpClientV2::new(valid_config);
         assert!(client.is_ok());
@@ -408,10 +431,10 @@ mod tests {
     async fn test_backoff_calculation() {
         let config = Config::default();
         let client = BrpClientV2::new(config).unwrap();
-        
+
         let delay1 = client.calculate_backoff_delay(0);
         let delay2 = client.calculate_backoff_delay(1);
-        
+
         assert!(delay2 > delay1);
         assert!(delay2 <= client.config.resilience.retry.max_delay);
     }

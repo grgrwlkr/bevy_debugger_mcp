@@ -1,17 +1,16 @@
+pub mod colliders;
+pub mod custom_markers;
 /// Visual Debug Overlay Module
-/// 
+///
 /// This module contains all the visual overlay implementations and the manager
 /// that coordinates them. Each overlay type has its own module with specific
 /// rendering logic and configuration options.
 ///
 /// This module is only available when the "visual_overlays" feature is enabled.
-
 pub mod entity_highlight;
-pub mod colliders;
-pub mod transforms;
-pub mod system_flow;
 pub mod performance_metrics;
-pub mod custom_markers;
+pub mod system_flow;
+pub mod transforms;
 
 use crate::brp_messages::DebugOverlayType;
 #[cfg(feature = "visual_overlays")]
@@ -25,22 +24,22 @@ use std::collections::HashMap;
 pub trait VisualOverlay: Send + Sync + std::fmt::Debug {
     /// Initialize the overlay system
     fn initialize(&mut self, app: &mut App);
-    
+
     /// Update the overlay configuration
     fn update_config(&mut self, config: &serde_json::Value) -> Result<(), String>;
-    
+
     /// Enable or disable the overlay
     fn set_enabled(&mut self, enabled: bool);
-    
+
     /// Check if the overlay is enabled
     fn is_enabled(&self) -> bool;
-    
+
     /// Get performance metrics for this overlay
     fn get_metrics(&self) -> OverlayMetrics;
-    
+
     /// Get the overlay type
     fn overlay_type(&self) -> DebugOverlayType;
-    
+
     /// Cleanup when the overlay is disabled
     fn cleanup(&mut self);
 }
@@ -130,7 +129,7 @@ impl Default for ViewportOverlaySettings {
         Self {
             enabled: true,
             render_budget_us: 800, // 0.8ms per viewport
-            max_elements: 50, // Limit elements per viewport
+            max_elements: 50,      // Limit elements per viewport
             lod_settings: LodSettings::default(),
             overlay_visibility: HashMap::new(),
         }
@@ -171,37 +170,49 @@ impl VisualOverlayManager {
             total_metrics: OverlayMetrics::default(),
         }
     }
-    
+
     /// Initialize the manager with all overlay types
     pub fn initialize(&mut self, app: &mut App) {
         // Register all overlay implementations
-        self.register_overlay("entity_highlight", Box::new(entity_highlight::EntityHighlightOverlay::new()));
+        self.register_overlay(
+            "entity_highlight",
+            Box::new(entity_highlight::EntityHighlightOverlay::new()),
+        );
         self.register_overlay("colliders", Box::new(colliders::CollidersOverlay::new()));
         self.register_overlay("transforms", Box::new(transforms::TransformsOverlay::new()));
-        self.register_overlay("system_flow", Box::new(system_flow::SystemFlowOverlay::new()));
-        self.register_overlay("performance_metrics", Box::new(performance_metrics::PerformanceMetricsOverlay::new()));
-        
+        self.register_overlay(
+            "system_flow",
+            Box::new(system_flow::SystemFlowOverlay::new()),
+        );
+        self.register_overlay(
+            "performance_metrics",
+            Box::new(performance_metrics::PerformanceMetricsOverlay::new()),
+        );
+
         // Initialize all overlays
         for overlay in self.overlays.values_mut() {
             overlay.initialize(app);
         }
-        
+
         // Add viewport configuration resource
         app.insert_resource(ViewportConfig::default());
-        
+
         // Add global systems
-        app.add_systems(PostUpdate, (
-            Self::update_performance_metrics,
-            Self::check_performance_budget.after(Self::update_performance_metrics),
-            Self::manage_viewport_config,
-        ));
+        app.add_systems(
+            PostUpdate,
+            (
+                Self::update_performance_metrics,
+                Self::check_performance_budget.after(Self::update_performance_metrics),
+                Self::manage_viewport_config,
+            ),
+        );
     }
-    
+
     /// Register a new overlay
     fn register_overlay(&mut self, key: &str, overlay: Box<dyn VisualOverlay>) {
         self.overlays.insert(key.to_string(), overlay);
     }
-    
+
     /// Set overlay enabled/disabled state
     pub fn set_overlay_enabled(
         &mut self,
@@ -210,55 +221,56 @@ impl VisualOverlayManager {
         config: Option<&serde_json::Value>,
     ) -> Result<(), String> {
         let key = self.overlay_type_to_key(overlay_type);
-        
+
         if let Some(overlay) = self.overlays.get_mut(&key) {
             overlay.set_enabled(enabled);
-            
+
             if let Some(config) = config {
                 overlay.update_config(config)?;
             }
-            
+
             info!(
                 "Visual overlay '{}' {} with config: {:?}",
                 key,
                 if enabled { "enabled" } else { "disabled" },
                 config
             );
-            
+
             Ok(())
         } else {
             Err(format!("Unknown overlay type: {:?}", overlay_type))
         }
     }
-    
+
     /// Get overlay status
-    pub fn get_overlay_status(&self, overlay_type: &DebugOverlayType) -> Option<(bool, OverlayMetrics)> {
+    pub fn get_overlay_status(
+        &self,
+        overlay_type: &DebugOverlayType,
+    ) -> Option<(bool, OverlayMetrics)> {
         let key = self.overlay_type_to_key(overlay_type);
-        self.overlays.get(&key).map(|overlay| {
-            (overlay.is_enabled(), overlay.get_metrics())
-        })
+        self.overlays
+            .get(&key)
+            .map(|overlay| (overlay.is_enabled(), overlay.get_metrics()))
     }
-    
+
     /// Get all overlay statuses
     pub fn get_all_statuses(&self) -> HashMap<String, (bool, OverlayMetrics)> {
         self.overlays
             .iter()
-            .map(|(key, overlay)| {
-                (key.clone(), (overlay.is_enabled(), overlay.get_metrics()))
-            })
+            .map(|(key, overlay)| (key.clone(), (overlay.is_enabled(), overlay.get_metrics())))
             .collect()
     }
-    
+
     /// Get total performance metrics
     pub fn get_total_metrics(&self) -> &OverlayMetrics {
         &self.total_metrics
     }
-    
+
     /// Check if performance budget is exceeded
     pub fn is_performance_budget_exceeded(&self) -> bool {
         self.total_metrics.render_time_us > self.performance_budget_us
     }
-    
+
     /// Convert overlay type to string key
     fn overlay_type_to_key(&self, overlay_type: &DebugOverlayType) -> String {
         match overlay_type {
@@ -273,21 +285,21 @@ impl VisualOverlayManager {
             DebugOverlayType::Custom(name) => format!("custom_{}", name),
         }
     }
-    
+
     /// System to update performance metrics
     fn update_performance_metrics(
         time: Res<Time>,
         mut overlay_manager: ResMut<VisualOverlayManager>,
     ) {
         let start_time = std::time::Instant::now();
-        
+
         // Aggregate metrics from all overlays
         let mut total_render_time = 0;
         let mut total_element_count = 0;
         let mut total_memory_usage = 0;
         let mut total_frame_updates = 0;
         let mut any_active = false;
-        
+
         for overlay in overlay_manager.overlays.values() {
             let metrics = overlay.get_metrics();
             total_render_time += metrics.render_time_us;
@@ -296,7 +308,7 @@ impl VisualOverlayManager {
             total_frame_updates += metrics.frame_updates;
             any_active |= metrics.active_this_frame;
         }
-        
+
         overlay_manager.total_metrics = OverlayMetrics {
             render_time_us: total_render_time,
             element_count: total_element_count,
@@ -304,38 +316,34 @@ impl VisualOverlayManager {
             frame_updates: total_frame_updates,
             active_this_frame: any_active,
         };
-        
+
         // Track system execution time
         let execution_time = start_time.elapsed().as_micros() as u64;
         overlay_manager.total_metrics.render_time_us += execution_time;
     }
-    
+
     /// System to check performance budget and warn if exceeded
-    fn check_performance_budget(
-        overlay_manager: Res<VisualOverlayManager>,
-    ) {
+    fn check_performance_budget(overlay_manager: Res<VisualOverlayManager>) {
         if overlay_manager.is_performance_budget_exceeded() {
             warn!(
                 "Visual debug overlay performance budget exceeded: {}μs > {}μs",
-                overlay_manager.total_metrics.render_time_us,
-                overlay_manager.performance_budget_us
+                overlay_manager.total_metrics.render_time_us, overlay_manager.performance_budget_us
             );
-            
+
             // Log details about which overlays are consuming time
             for (name, overlay) in &overlay_manager.overlays {
                 let metrics = overlay.get_metrics();
-                if metrics.render_time_us > 100 { // Log overlays taking more than 100μs
+                if metrics.render_time_us > 100 {
+                    // Log overlays taking more than 100μs
                     warn!(
                         "Overlay '{}' performance: {}μs, {} elements",
-                        name,
-                        metrics.render_time_us,
-                        metrics.element_count
+                        name, metrics.render_time_us, metrics.element_count
                     );
                 }
             }
         }
     }
-    
+
     /// System to manage viewport configuration and auto-detection
     fn manage_viewport_config(
         mut viewport_config: ResMut<ViewportConfig>,
@@ -344,18 +352,18 @@ impl VisualOverlayManager {
         if !viewport_config.auto_detect_viewports {
             return;
         }
-        
+
         let mut active_viewports = std::collections::HashSet::new();
-        
+
         // Detect active viewports from cameras
         for (entity, camera, _transform) in &cameras {
             if !camera.is_active {
                 continue;
             }
-            
+
             let viewport_id = format!("camera_{}", entity.index());
             active_viewports.insert(viewport_id.clone());
-            
+
             // Add new viewport if not exists
             if !viewport_config.viewport_overlays.contains_key(&viewport_id) {
                 if viewport_config.viewport_overlays.len() < viewport_config.max_viewports {
@@ -365,11 +373,14 @@ impl VisualOverlayManager {
                     );
                     info!("Auto-detected new viewport: {}", viewport_id);
                 } else {
-                    warn!("Maximum viewport limit reached: {}", viewport_config.max_viewports);
+                    warn!(
+                        "Maximum viewport limit reached: {}",
+                        viewport_config.max_viewports
+                    );
                 }
             }
         }
-        
+
         // Remove inactive viewports (optional cleanup)
         let inactive_viewports: Vec<String> = viewport_config
             .viewport_overlays
@@ -377,7 +388,7 @@ impl VisualOverlayManager {
             .filter(|k| !active_viewports.contains(*k))
             .cloned()
             .collect();
-        
+
         for viewport_id in inactive_viewports {
             viewport_config.viewport_overlays.remove(&viewport_id);
             debug!("Removed inactive viewport: {}", viewport_id);
@@ -418,7 +429,9 @@ impl Plugin for VisualDebugOverlayPlugin {
 }
 
 // Re-export overlay implementations
-pub use entity_highlight::{EntityHighlightOverlay, HighlightedEntity, HighlightMode, HighlightConfig};
+pub use entity_highlight::{
+    EntityHighlightOverlay, HighlightConfig, HighlightMode, HighlightedEntity,
+};
 
 #[cfg(test)]
 mod tests {
@@ -427,7 +440,7 @@ mod tests {
     #[test]
     fn test_overlay_type_to_key() {
         let manager = VisualOverlayManager::new();
-        
+
         assert_eq!(
             manager.overlay_type_to_key(&DebugOverlayType::EntityHighlight),
             "entity_highlight"
@@ -445,7 +458,7 @@ mod tests {
     #[test]
     fn test_performance_budget_tracking() {
         let manager = VisualOverlayManager::new();
-        
+
         // Default budget is 2000us (2ms)
         assert_eq!(manager.performance_budget_us, 2000);
         assert!(!manager.is_performance_budget_exceeded()); // Should be false initially

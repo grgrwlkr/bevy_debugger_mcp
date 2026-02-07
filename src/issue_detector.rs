@@ -1,15 +1,14 @@
 /// Automated Issue Detection System for Bevy Applications
-/// 
+///
 /// This module provides intelligent pattern-based issue detection that continuously
 /// monitors for common problems in Bevy applications and generates actionable alerts.
-/// 
+///
 /// Key Features:
 /// - Pattern-based detection for 15+ common issue types
 /// - Configurable detection rules with hot-reload support
 /// - Severity classification and alert throttling
 /// - Remediation suggestions for each issue type
 /// - ML-ready data collection for future enhancements
-
 use crate::error::{Error, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -50,25 +49,25 @@ pub enum IssueSeverity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IssuePattern {
     /// Transform contains NaN values
-    TransformNaN { 
+    TransformNaN {
         entity_id: u32,
         component: String,
         values: Vec<f32>,
     },
     /// Memory leak detected
-    MemoryLeak { 
+    MemoryLeak {
         rate_mb_per_sec: f32,
         total_leaked_mb: f32,
         suspected_source: String,
     },
     /// Rendering stall detected
-    RenderingStall { 
+    RenderingStall {
         duration_ms: f32,
         frame_number: u64,
         gpu_wait_time_ms: f32,
     },
     /// Entity count growing exponentially
-    EntityExplosion { 
+    EntityExplosion {
         growth_rate: f32,
         current_count: usize,
         time_window_sec: f32,
@@ -158,7 +157,9 @@ impl IssuePattern {
     pub fn severity(&self) -> IssueSeverity {
         match self {
             IssuePattern::TransformNaN { .. } => IssueSeverity::Critical,
-            IssuePattern::MemoryLeak { rate_mb_per_sec, .. } => {
+            IssuePattern::MemoryLeak {
+                rate_mb_per_sec, ..
+            } => {
                 if *rate_mb_per_sec > 10.0 {
                     IssueSeverity::Critical
                 } else if *rate_mb_per_sec > 1.0 {
@@ -219,7 +220,10 @@ impl IssuePattern {
             IssuePattern::QueryPerformanceDegradation { .. } => IssueSeverity::Medium,
             IssuePattern::StateTransitionLoop { .. } => IssueSeverity::High,
             IssuePattern::AudioBufferUnderrun { .. } => IssueSeverity::Medium,
-            IssuePattern::NetworkLatencySpike { packet_loss_percent, .. } => {
+            IssuePattern::NetworkLatencySpike {
+                packet_loss_percent,
+                ..
+            } => {
                 if *packet_loss_percent > 10.0 {
                     IssueSeverity::High
                 } else {
@@ -236,8 +240,14 @@ impl IssuePattern {
             IssuePattern::MemoryLeak { .. } => "memory_leak".to_string(),
             IssuePattern::RenderingStall { .. } => "rendering_stall".to_string(),
             IssuePattern::EntityExplosion { .. } => "entity_explosion".to_string(),
-            IssuePattern::SystemOverrun { system_name, .. } => format!("system_overrun_{}", system_name),
-            IssuePattern::ComponentThrashing { entity_id, component_type, .. } => {
+            IssuePattern::SystemOverrun { system_name, .. } => {
+                format!("system_overrun_{}", system_name)
+            }
+            IssuePattern::ComponentThrashing {
+                entity_id,
+                component_type,
+                ..
+            } => {
                 format!("component_thrashing_{}_{}", entity_id, component_type)
             }
             IssuePattern::ResourceContention { resource_name, .. } => {
@@ -255,7 +265,9 @@ impl IssuePattern {
                 format!("event_queue_backup_{}", event_type)
             }
             IssuePattern::TextureMemoryExhaustion { .. } => "texture_memory_exhaustion".to_string(),
-            IssuePattern::QueryPerformanceDegradation { query_description, .. } => {
+            IssuePattern::QueryPerformanceDegradation {
+                query_description, ..
+            } => {
                 format!("query_degradation_{}", query_description.replace(' ', "_"))
             }
             IssuePattern::StateTransitionLoop { .. } => "state_transition_loop".to_string(),
@@ -388,7 +400,9 @@ impl IssueDetector {
         Self {
             config,
             rules: Arc::new(RwLock::new(Self::default_rules())),
-            alert_history: Arc::new(RwLock::new(VecDeque::with_capacity(constants::MAX_ALERT_HISTORY))),
+            alert_history: Arc::new(RwLock::new(VecDeque::with_capacity(
+                constants::MAX_ALERT_HISTORY,
+            ))),
             throttle_map: Arc::new(RwLock::new(HashMap::new())),
             active_detectors: Arc::new(RwLock::new(HashSet::new())),
             ml_data_buffer: Arc::new(RwLock::new(Vec::new())),
@@ -401,60 +415,72 @@ impl IssueDetector {
         let mut rules = HashMap::new();
 
         // Transform NaN detection
-        rules.insert("transform_nan".to_string(), DetectionRule {
-            name: "Transform NaN Detection".to_string(),
-            description: "Detects NaN values in transform components".to_string(),
-            enabled: true,
-            sensitivity: 1.0, // Always detect NaN
-            min_occurrences: 1,
-            time_window_seconds: 1,
-            parameters: HashMap::new(),
-        });
+        rules.insert(
+            "transform_nan".to_string(),
+            DetectionRule {
+                name: "Transform NaN Detection".to_string(),
+                description: "Detects NaN values in transform components".to_string(),
+                enabled: true,
+                sensitivity: 1.0, // Always detect NaN
+                min_occurrences: 1,
+                time_window_seconds: 1,
+                parameters: HashMap::new(),
+            },
+        );
 
         // Memory leak detection
-        rules.insert("memory_leak".to_string(), DetectionRule {
-            name: "Memory Leak Detection".to_string(),
-            description: "Detects continuous memory growth patterns".to_string(),
-            enabled: true,
-            sensitivity: 0.7,
-            min_occurrences: 5,
-            time_window_seconds: 60,
-            parameters: {
-                let mut params = HashMap::new();
-                params.insert("min_rate_mb_per_sec".to_string(), serde_json::json!(0.1));
-                params
+        rules.insert(
+            "memory_leak".to_string(),
+            DetectionRule {
+                name: "Memory Leak Detection".to_string(),
+                description: "Detects continuous memory growth patterns".to_string(),
+                enabled: true,
+                sensitivity: 0.7,
+                min_occurrences: 5,
+                time_window_seconds: 60,
+                parameters: {
+                    let mut params = HashMap::new();
+                    params.insert("min_rate_mb_per_sec".to_string(), serde_json::json!(0.1));
+                    params
+                },
             },
-        });
+        );
 
         // Frame spike detection
-        rules.insert("frame_spike".to_string(), DetectionRule {
-            name: "Frame Spike Detection".to_string(),
-            description: "Detects sudden frame time increases".to_string(),
-            enabled: true,
-            sensitivity: 0.5,
-            min_occurrences: 3,
-            time_window_seconds: 10,
-            parameters: {
-                let mut params = HashMap::new();
-                params.insert("spike_ratio_threshold".to_string(), serde_json::json!(2.0));
-                params
+        rules.insert(
+            "frame_spike".to_string(),
+            DetectionRule {
+                name: "Frame Spike Detection".to_string(),
+                description: "Detects sudden frame time increases".to_string(),
+                enabled: true,
+                sensitivity: 0.5,
+                min_occurrences: 3,
+                time_window_seconds: 10,
+                parameters: {
+                    let mut params = HashMap::new();
+                    params.insert("spike_ratio_threshold".to_string(), serde_json::json!(2.0));
+                    params
+                },
             },
-        });
+        );
 
         // Entity explosion detection
-        rules.insert("entity_explosion".to_string(), DetectionRule {
-            name: "Entity Explosion Detection".to_string(),
-            description: "Detects rapid entity count growth".to_string(),
-            enabled: true,
-            sensitivity: 0.6,
-            min_occurrences: 1,
-            time_window_seconds: 5,
-            parameters: {
-                let mut params = HashMap::new();
-                params.insert("growth_rate_threshold".to_string(), serde_json::json!(1.5));
-                params
+        rules.insert(
+            "entity_explosion".to_string(),
+            DetectionRule {
+                name: "Entity Explosion Detection".to_string(),
+                description: "Detects rapid entity count growth".to_string(),
+                enabled: true,
+                sensitivity: 0.6,
+                min_occurrences: 1,
+                time_window_seconds: 5,
+                parameters: {
+                    let mut params = HashMap::new();
+                    params.insert("growth_rate_threshold".to_string(), serde_json::json!(1.5));
+                    params
+                },
             },
-        });
+        );
 
         // Add more default rules...
         rules
@@ -473,7 +499,7 @@ impl IssueDetector {
 
         // Check if rule is enabled and meets criteria
         let should_alert = self.check_detection_criteria(&pattern).await?;
-        
+
         if !should_alert {
             return Ok(None);
         }
@@ -507,11 +533,11 @@ impl IssueDetector {
             let mut stats = self.stats.write().await;
             stats.total_detected += 1;
             stats.last_detection = Some(Instant::now());
-            
+
             let latency = detection_start.elapsed().as_millis() as f64;
-            stats.avg_detection_latency_ms = 
-                (stats.avg_detection_latency_ms * (stats.total_detected - 1) as f64 + latency) 
-                / stats.total_detected as f64;
+            stats.avg_detection_latency_ms =
+                (stats.avg_detection_latency_ms * (stats.total_detected - 1) as f64 + latency)
+                    / stats.total_detected as f64;
         }
 
         // Collect ML data if enabled
@@ -519,14 +545,17 @@ impl IssueDetector {
             self.collect_ml_data(&alert).await;
         }
 
-        info!("Issue detected: {:?} with severity {:?}", pattern_id, alert.severity);
+        info!(
+            "Issue detected: {:?} with severity {:?}",
+            pattern_id, alert.severity
+        );
         Ok(Some(alert))
     }
 
     /// Check if an issue should be throttled
     async fn is_throttled(&self, pattern_id: &str) -> bool {
         let throttle_map = self.throttle_map.read().await;
-        
+
         if let Some(last_alert_time) = throttle_map.get(pattern_id) {
             last_alert_time.elapsed() < self.config.default_throttle_duration
         } else {
@@ -537,7 +566,7 @@ impl IssueDetector {
     /// Check if detection criteria are met
     async fn check_detection_criteria(&self, pattern: &IssuePattern) -> Result<bool> {
         let rules = self.rules.read().await;
-        
+
         // Find applicable rule
         let rule_key = match pattern {
             IssuePattern::TransformNaN { .. } => "transform_nan",
@@ -563,13 +592,22 @@ impl IssueDetector {
     /// Generate remediation suggestions for an issue
     fn generate_remediation(&self, pattern: &IssuePattern) -> Vec<String> {
         match pattern {
-            IssuePattern::TransformNaN { entity_id, component, .. } => vec![
-                format!("Check calculations affecting entity {} transform", entity_id),
+            IssuePattern::TransformNaN {
+                entity_id,
+                component,
+                ..
+            } => vec![
+                format!(
+                    "Check calculations affecting entity {} transform",
+                    entity_id
+                ),
                 format!("Validate input data for {} component", component),
                 "Add NaN checks in transform update systems".to_string(),
                 "Consider using safe math operations (e.g., clamping)".to_string(),
             ],
-            IssuePattern::MemoryLeak { suspected_source, .. } => vec![
+            IssuePattern::MemoryLeak {
+                suspected_source, ..
+            } => vec![
                 format!("Review memory allocations in {}", suspected_source),
                 "Check for circular references or retained collections".to_string(),
                 "Ensure resources are properly cleaned up".to_string(),
@@ -587,15 +625,26 @@ impl IssueDetector {
                 "Check for recursive entity spawning".to_string(),
                 "Implement entity lifecycle management".to_string(),
             ],
-            IssuePattern::SystemOverrun { system_name, budget_ms, .. } => vec![
+            IssuePattern::SystemOverrun {
+                system_name,
+                budget_ms,
+                ..
+            } => vec![
                 format!("Optimize {} system implementation", system_name),
                 format!("Consider increasing budget from {}ms", budget_ms),
                 "Profile system to identify bottlenecks".to_string(),
                 "Consider parallelizing or splitting the system".to_string(),
             ],
-            IssuePattern::ComponentThrashing { entity_id, component_type, .. } => vec![
+            IssuePattern::ComponentThrashing {
+                entity_id,
+                component_type,
+                ..
+            } => vec![
                 format!("Review component lifecycle for entity {}", entity_id),
-                format!("Consider using a different pattern than adding/removing {}", component_type),
+                format!(
+                    "Consider using a different pattern than adding/removing {}",
+                    component_type
+                ),
                 "Use component flags instead of add/remove".to_string(),
                 "Batch component operations".to_string(),
             ],
@@ -610,18 +659,20 @@ impl IssueDetector {
     /// Record an alert in history
     async fn record_alert(&self, alert: IssueAlert) -> Result<()> {
         let mut history = self.alert_history.write().await;
-        
+
         // Strictly enforce max history size - never exceed it
         if history.len() >= self.config.max_alert_history {
             history.pop_front();
         }
-        
+
         history.push_back(alert);
-        
+
         // Debug assertion to ensure we never exceed the limit
-        debug_assert!(history.len() <= self.config.max_alert_history, 
-                     "Alert history exceeded maximum size");
-        
+        debug_assert!(
+            history.len() <= self.config.max_alert_history,
+            "Alert history exceeded maximum size"
+        );
+
         Ok(())
     }
 
@@ -629,16 +680,16 @@ impl IssueDetector {
     async fn collect_ml_data(&self, alert: &IssueAlert) {
         const MAX_ML_BUFFER_SIZE: usize = 10000;
         const DRAIN_TO_SIZE: usize = 5000;
-        
+
         let mut buffer = self.ml_data_buffer.write().await;
-        
+
         // Strictly enforce buffer limit - check before insertion
         if buffer.len() >= MAX_ML_BUFFER_SIZE {
             // Drain older records to make room
             let drain_count = buffer.len() - DRAIN_TO_SIZE;
             buffer.drain(0..drain_count);
         }
-        
+
         let ml_record = serde_json::json!({
             "timestamp": alert.detected_at.to_rfc3339(),
             "pattern_type": format!("{:?}", std::mem::discriminant(&alert.pattern)),
@@ -646,12 +697,14 @@ impl IssueDetector {
             "detection_latency_ms": alert.detection_latency_ms,
             "pattern_data": alert.pattern,
         });
-        
+
         buffer.push(ml_record);
-        
+
         // Debug assertion to ensure we never exceed the limit
-        debug_assert!(buffer.len() <= MAX_ML_BUFFER_SIZE,
-                     "ML buffer exceeded maximum size");
+        debug_assert!(
+            buffer.len() <= MAX_ML_BUFFER_SIZE,
+            "ML buffer exceeded maximum size"
+        );
     }
 
     /// Update a detection rule
@@ -673,25 +726,21 @@ impl IssueDetector {
     pub async fn get_alert_history(&self, limit: Option<usize>) -> Vec<IssueAlert> {
         let history = self.alert_history.read().await;
         let limit = limit.unwrap_or(100).min(history.len());
-        
-        history.iter()
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect()
+
+        history.iter().rev().take(limit).cloned().collect()
     }
 
     /// Mark an alert as acknowledged
     pub async fn acknowledge_alert(&self, alert_id: &str) -> Result<()> {
         let mut history = self.alert_history.write().await;
-        
+
         for alert in history.iter_mut() {
             if alert.id == alert_id {
                 alert.acknowledged = true;
                 return Ok(());
             }
         }
-        
+
         Err(Error::Validation(format!("Alert not found: {}", alert_id)))
     }
 
@@ -699,10 +748,10 @@ impl IssueDetector {
     pub async fn report_false_positive(&self, alert_id: &str) -> Result<()> {
         let mut stats = self.stats.write().await;
         stats.false_positives += 1;
-        
+
         // Mark alert as acknowledged
         self.acknowledge_alert(alert_id).await?;
-        
+
         info!("False positive reported for alert: {}", alert_id);
         Ok(())
     }
@@ -711,18 +760,30 @@ impl IssueDetector {
     pub async fn get_statistics(&self) -> HashMap<String, serde_json::Value> {
         let stats = self.stats.read().await;
         let mut result = HashMap::new();
-        
-        result.insert("total_detected".to_string(), serde_json::json!(stats.total_detected));
-        result.insert("false_positives".to_string(), serde_json::json!(stats.false_positives));
-        result.insert("avg_detection_latency_ms".to_string(), serde_json::json!(stats.avg_detection_latency_ms));
-        
+
+        result.insert(
+            "total_detected".to_string(),
+            serde_json::json!(stats.total_detected),
+        );
+        result.insert(
+            "false_positives".to_string(),
+            serde_json::json!(stats.false_positives),
+        );
+        result.insert(
+            "avg_detection_latency_ms".to_string(),
+            serde_json::json!(stats.avg_detection_latency_ms),
+        );
+
         let false_positive_rate = if stats.total_detected > 0 {
             (stats.false_positives as f64 / stats.total_detected as f64) * 100.0
         } else {
             0.0
         };
-        result.insert("false_positive_rate".to_string(), serde_json::json!(false_positive_rate));
-        
+        result.insert(
+            "false_positive_rate".to_string(),
+            serde_json::json!(false_positive_rate),
+        );
+
         result
     }
 
@@ -750,13 +811,13 @@ pub fn calculate_memory_leak_rate(samples: &[(f32, Instant)]) -> f32 {
     if samples.len() < 2 {
         return 0.0;
     }
-    
+
     let first = &samples[0];
     let last = &samples[samples.len() - 1];
-    
+
     let memory_diff = last.0 - first.0;
     let time_diff = last.1.duration_since(first.1).as_secs_f32();
-    
+
     if time_diff > 0.0 {
         memory_diff / time_diff
     } else {
@@ -781,7 +842,7 @@ mod tests {
 
         let alert = detector.detect_issue(pattern).await.unwrap();
         assert!(alert.is_some());
-        
+
         let alert = alert.unwrap();
         assert_eq!(alert.severity, IssueSeverity::Critical);
         assert!(!alert.remediation.is_empty());
@@ -818,21 +879,30 @@ mod tests {
     #[tokio::test]
     async fn test_severity_classification() {
         let patterns = vec![
-            (IssuePattern::TransformNaN {
-                entity_id: 1,
-                component: "Transform".to_string(),
-                values: vec![f32::NAN],
-            }, IssueSeverity::Critical),
-            (IssuePattern::MemoryLeak {
-                rate_mb_per_sec: 0.5,
-                total_leaked_mb: 10.0,
-                suspected_source: "Test".to_string(),
-            }, IssueSeverity::Medium),
-            (IssuePattern::FrameSpike {
-                frame_time_ms: 50.0,
-                average_frame_time_ms: 16.0,
-                spike_ratio: 3.1,
-            }, IssueSeverity::High),
+            (
+                IssuePattern::TransformNaN {
+                    entity_id: 1,
+                    component: "Transform".to_string(),
+                    values: vec![f32::NAN],
+                },
+                IssueSeverity::Critical,
+            ),
+            (
+                IssuePattern::MemoryLeak {
+                    rate_mb_per_sec: 0.5,
+                    total_leaked_mb: 10.0,
+                    suspected_source: "Test".to_string(),
+                },
+                IssueSeverity::Medium,
+            ),
+            (
+                IssuePattern::FrameSpike {
+                    frame_time_ms: 50.0,
+                    average_frame_time_ms: 16.0,
+                    spike_ratio: 3.1,
+                },
+                IssueSeverity::High,
+            ),
         ];
 
         for (pattern, expected_severity) in patterns {
@@ -854,7 +924,7 @@ mod tests {
             (110.0, now + Duration::from_secs(1)),
             (120.0, now + Duration::from_secs(2)),
         ];
-        
+
         let rate = calculate_memory_leak_rate(&samples);
         assert!((rate - 10.0).abs() < 0.1); // ~10 MB/s
     }

@@ -1,5 +1,5 @@
 //! Refactored replay tool using actor model instead of Arc<RwLock<T>>
-//! 
+//!
 //! This is the new implementation that eliminates lock contention by using
 //! message passing and the actor pattern.
 
@@ -74,7 +74,7 @@ async fn handle_record(
     handle: &crate::replay_actor::ReplayActorHandle,
 ) -> Result<Value> {
     let config = parse_recording_config(&arguments);
-    
+
     match handle.start_recording(config).await {
         Ok(status) => Ok(json!({
             "success": true,
@@ -254,7 +254,9 @@ async fn handle_seek(
     let position = arguments
         .get("position")
         .and_then(|p| p.as_f64())
-        .ok_or_else(|| Error::InvalidInput("Missing or invalid 'position' parameter".to_string()))?;
+        .ok_or_else(|| {
+            Error::InvalidInput("Missing or invalid 'position' parameter".to_string())
+        })?;
 
     // Implementation would use the actor handle to seek to position
     Ok(json!({

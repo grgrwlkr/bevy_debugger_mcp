@@ -23,7 +23,7 @@ use tracing::{debug, error, info};
 
 use crate::brp_command_handler::{BrpCommandHandler, CommandHandlerMetadata, CommandVersion};
 use crate::brp_messages::{BrpRequest, BrpResponse, DebugCommand, DebugResponse};
-use crate::debug_command_processor::{DebugCommandRouter, DebugCommandRequest};
+use crate::debug_command_processor::{DebugCommandRequest, DebugCommandRouter};
 use crate::error::Result;
 
 /// Handler for debug commands that routes through the debug command processor
@@ -43,7 +43,8 @@ impl BrpCommandHandler for DebugBrpHandler {
         CommandHandlerMetadata {
             name: "debug".to_string(),
             version: CommandVersion::new(1, 0, 0),
-            description: "Handler for debug commands through the debug command processor".to_string(),
+            description: "Handler for debug commands through the debug command processor"
+                .to_string(),
             supported_commands: vec![
                 "InspectEntity".to_string(),
                 "GetHierarchy".to_string(),
@@ -64,23 +65,27 @@ impl BrpCommandHandler for DebugBrpHandler {
     }
 
     async fn handle(&self, request: BrpRequest) -> Result<BrpResponse> {
-        if let BrpRequest::Debug { command, correlation_id, priority } = request {
+        if let BrpRequest::Debug {
+            command,
+            correlation_id,
+            priority,
+        } = request
+        {
             debug!("Processing debug command: {:?}", command);
-            
+
             // Create a debug command request
-            let command_request = DebugCommandRequest::new(
-                command.clone(),
-                correlation_id.clone(),
-                priority,
-            );
-            
+            let command_request =
+                DebugCommandRequest::new(command.clone(), correlation_id.clone(), priority);
+
             // Route through the debug command processor
             match self.debug_router.route(command_request).await {
                 Ok(response) => {
                     info!("Debug command processed successfully");
-                    
+
                     // Convert DebugResponse to BrpResponse
-                    Ok(BrpResponse::Success(Box::new(crate::brp_messages::BrpResult::Debug(Box::new(response)))))
+                    Ok(BrpResponse::Success(Box::new(
+                        crate::brp_messages::BrpResult::Debug(Box::new(response)),
+                    )))
                 }
                 Err(e) => {
                     error!("Failed to process debug command: {}", e);
@@ -124,9 +129,9 @@ mod tests {
     #[async_trait]
     impl DebugCommandProcessor for MockDebugProcessor {
         async fn process(&self, _command: DebugCommand) -> Result<DebugResponse> {
-            Ok(DebugResponse::Success { 
-                message: "test success".to_string(), 
-                data: Some(json!({ "test": "success" })) 
+            Ok(DebugResponse::Success {
+                message: "test success".to_string(),
+                data: Some(json!({ "test": "success" })),
             })
         }
 
@@ -152,11 +157,11 @@ mod tests {
 
         let handler = DebugBrpHandler::new(router);
 
-        let request = BrpRequest::Debug { 
-            command: DebugCommand::InspectEntity { 
-                entity_id: 123, 
-                include_metadata: None, 
-                include_relationships: None 
+        let request = BrpRequest::Debug {
+            command: DebugCommand::InspectEntity {
+                entity_id: 123,
+                include_metadata: None,
+                include_relationships: None,
             },
             correlation_id: "test-123".to_string(),
             priority: Some(5),
@@ -184,6 +189,8 @@ mod tests {
         let metadata = handler.metadata();
         assert_eq!(metadata.name, "debug");
         assert_eq!(metadata.version.major, 1);
-        assert!(metadata.supported_commands.contains(&"InspectEntity".to_string()));
+        assert!(metadata
+            .supported_commands
+            .contains(&"InspectEntity".to_string()));
     }
 }

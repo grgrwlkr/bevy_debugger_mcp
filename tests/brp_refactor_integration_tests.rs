@@ -51,7 +51,7 @@ impl BrpCommandHandler for MockCommandHandler {
 #[tokio::test]
 async fn test_command_handler_registry() {
     let registry = CommandHandlerRegistry::new();
-    
+
     // Register multiple handlers
     let handler1 = Arc::new(MockCommandHandler {
         name: "handler1".to_string(),
@@ -61,18 +61,18 @@ async fn test_command_handler_registry() {
         name: "handler2".to_string(),
         priority: 20,
     });
-    
+
     registry.register(handler1).await;
     registry.register(handler2).await;
-    
+
     // Test finding handler
-    let request = BrpRequest::Query { 
-        filter: None, 
-        limit: None, 
-        strict: Some(false) 
+    let request = BrpRequest::Query {
+        filter: None,
+        limit: None,
+        strict: Some(false),
     };
     let handler = registry.find_handler(&request).await;
-    
+
     assert!(handler.is_some());
     assert_eq!(handler.unwrap().priority(), 20); // Higher priority handler selected
 }
@@ -80,44 +80,52 @@ async fn test_command_handler_registry() {
 #[tokio::test]
 async fn test_version_compatibility() {
     let registry = CommandHandlerRegistry::new();
-    
+
     let handler = Arc::new(MockCommandHandler {
         name: "versioned".to_string(),
         priority: 0,
     });
-    
+
     registry.register(handler).await;
-    
+
     // Check version compatibility
     let compatible_version = CommandVersion::new(1, 1, 0);
     let incompatible_version = CommandVersion::new(2, 0, 0);
-    
-    assert!(registry.is_version_supported("versioned", &compatible_version).await);
-    assert!(!registry.is_version_supported("versioned", &incompatible_version).await);
+
+    assert!(
+        registry
+            .is_version_supported("versioned", &compatible_version)
+            .await
+    );
+    assert!(
+        !registry
+            .is_version_supported("versioned", &incompatible_version)
+            .await
+    );
 }
 
 #[tokio::test]
 async fn test_brp_client_with_handlers() {
     let config = Config::default();
     let client = Arc::new(RwLock::new(BrpClient::new(&config)));
-    
+
     // Register custom handler
     let custom_handler = Arc::new(MockCommandHandler {
         name: "custom".to_string(),
         priority: 100,
     });
-    
+
     {
         let client = client.read().await;
         client.register_handler(custom_handler).await;
     }
-    
+
     // Verify registry is accessible
     let registry = {
         let client = client.read().await;
         client.command_registry()
     };
-    
+
     let versions = registry.get_versions().await;
     assert!(versions.contains_key("custom"));
 }
@@ -126,19 +134,21 @@ async fn test_brp_client_with_handlers() {
 async fn test_debug_handler_integration() {
     // Create debug router
     let debug_router = Arc::new(DebugCommandRouter::new());
-    
+
     // Create debug handler
     let debug_handler = DebugBrpHandler::new(debug_router);
-    
+
     // Test metadata
     let metadata = debug_handler.metadata();
     assert_eq!(metadata.name, "debug");
-    assert!(metadata.supported_commands.contains(&"InspectEntity".to_string()));
-    
+    assert!(metadata
+        .supported_commands
+        .contains(&"InspectEntity".to_string()));
+
     // Test can_handle
     let debug_request = BrpRequest::Debug(DebugCommand::InspectEntity { entity_id: 123 });
     assert!(debug_handler.can_handle(&debug_request));
-    
+
     let non_debug_request = BrpRequest::ListEntities { filter: None };
     assert!(!debug_handler.can_handle(&non_debug_request));
 }
@@ -147,27 +157,31 @@ async fn test_debug_handler_integration() {
 async fn test_backward_compatibility() {
     let config = Config::default();
     let client = BrpClient::new(&config);
-    
+
     // Verify core handler is registered by default
     let registry = client.command_registry();
-    
+
     // Core requests should be handleable
     let core_requests = vec![
         BrpRequest::ListEntities { filter: None },
         BrpRequest::ListComponents,
         BrpRequest::Query(json!({})),
     ];
-    
+
     for request in core_requests {
         let handler = registry.find_handler(&request).await;
-        assert!(handler.is_some(), "Core request {:?} should have a handler", request);
+        assert!(
+            handler.is_some(),
+            "Core request {:?} should have a handler",
+            request
+        );
     }
 }
 
 #[tokio::test]
 async fn test_handler_priority_ordering() {
     let registry = CommandHandlerRegistry::new();
-    
+
     // Register handlers with different priorities
     for priority in vec![5, 15, 10, 20, 1] {
         let handler = Arc::new(MockCommandHandler {
@@ -176,18 +190,18 @@ async fn test_handler_priority_ordering() {
         });
         registry.register(handler).await;
     }
-    
+
     // The handler with highest priority (20) should be selected
     let request = BrpRequest::Query(json!({}));
     let handler = registry.find_handler(&request).await.unwrap();
-    
+
     assert_eq!(handler.priority(), 20);
 }
 
 #[tokio::test]
 async fn test_handler_validation() {
     struct ValidatingHandler;
-    
+
     #[async_trait]
     impl BrpCommandHandler for ValidatingHandler {
         fn metadata(&self) -> CommandHandlerMetadata {
@@ -198,15 +212,15 @@ async fn test_handler_validation() {
                 supported_commands: vec![],
             }
         }
-        
+
         fn can_handle(&self, request: &BrpRequest) -> bool {
             matches!(request, BrpRequest::Get { .. })
         }
-        
+
         async fn handle(&self, _request: BrpRequest) -> Result<BrpResponse> {
             Ok(BrpResponse::Success(Value::Null))
         }
-        
+
         async fn validate(&self, request: &BrpRequest) -> Result<()> {
             if let BrpRequest::Get { entity, .. } = request {
                 if *entity == 0 {
@@ -218,27 +232,33 @@ async fn test_handler_validation() {
             Ok(())
         }
     }
-    
+
     let registry = CommandHandlerRegistry::new();
     registry.register(Arc::new(ValidatingHandler)).await;
-    
+
     // Valid request should pass
-    let valid_request = BrpRequest::Get { entity: 123, components: None };
+    let valid_request = BrpRequest::Get {
+        entity: 123,
+        components: None,
+    };
     assert!(registry.process(valid_request).await.is_ok());
-    
+
     // Invalid request should fail validation
-    let invalid_request = BrpRequest::Get { entity: 0, components: None };
+    let invalid_request = BrpRequest::Get {
+        entity: 0,
+        components: None,
+    };
     assert!(registry.process(invalid_request).await.is_err());
 }
 
 #[tokio::test]
 async fn test_no_handler_error() {
     let registry = CommandHandlerRegistry::new();
-    
+
     // Request with no registered handler
     let request = BrpRequest::Screenshot(json!({}));
     let result = registry.process(request).await;
-    
+
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("No handler found"));
 }
@@ -249,7 +269,7 @@ async fn test_all_commands_have_handlers() {
     let config = Config::default();
     let client = BrpClient::new(&config);
     let registry = client.command_registry();
-    
+
     // List of all command types that should be supported
     let test_requests = vec![
         BrpRequest::Query(json!({})),
@@ -260,7 +280,7 @@ async fn test_all_commands_have_handlers() {
         BrpRequest::SpawnEntity(json!({})),
         BrpRequest::DestroyEntity(123),
     ];
-    
+
     for request in test_requests {
         let handler = registry.find_handler(&request).await;
         assert!(

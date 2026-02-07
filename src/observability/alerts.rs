@@ -78,9 +78,18 @@ impl AlertRules {
                 ("component".to_string(), "request-handling".to_string()),
             ]),
             annotations: HashMap::from([
-                ("summary".to_string(), "High request latency detected".to_string()),
-                ("description".to_string(), "P99 latency is {{ $value }}s, exceeding 5s threshold".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/high-latency".to_string()),
+                (
+                    "summary".to_string(),
+                    "High request latency detected".to_string(),
+                ),
+                (
+                    "description".to_string(),
+                    "P99 latency is {{ $value }}s, exceeding 5s threshold".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/high-latency".to_string(),
+                ),
             ]),
         }
     }
@@ -100,9 +109,18 @@ impl AlertRules {
                 ("component".to_string(), "error-handling".to_string()),
             ]),
             annotations: HashMap::from([
-                ("summary".to_string(), "High error rate detected".to_string()),
-                ("description".to_string(), "Error rate is {{ $value }}%, exceeding 5% threshold".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/high-errors".to_string()),
+                (
+                    "summary".to_string(),
+                    "High error rate detected".to_string(),
+                ),
+                (
+                    "description".to_string(),
+                    "Error rate is {{ $value }}%, exceeding 5% threshold".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/high-errors".to_string(),
+                ),
             ]),
         }
     }
@@ -123,8 +141,14 @@ impl AlertRules {
             ]),
             annotations: HashMap::from([
                 ("summary".to_string(), "BRP connection is down".to_string()),
-                ("description".to_string(), "BRP connection health check is failing".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/brp-connection".to_string()),
+                (
+                    "description".to_string(),
+                    "BRP connection health check is failing".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/brp-connection".to_string(),
+                ),
             ]),
         }
     }
@@ -144,9 +168,18 @@ impl AlertRules {
                 ("component".to_string(), "system-resources".to_string()),
             ]),
             annotations: HashMap::from([
-                ("summary".to_string(), "High memory usage detected".to_string()),
-                ("description".to_string(), "Memory usage is {{ $value }}GB, approaching limits".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/high-memory".to_string()),
+                (
+                    "summary".to_string(),
+                    "High memory usage detected".to_string(),
+                ),
+                (
+                    "description".to_string(),
+                    "Memory usage is {{ $value }}GB, approaching limits".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/high-memory".to_string(),
+                ),
             ]),
         }
     }
@@ -167,8 +200,14 @@ impl AlertRules {
             ]),
             annotations: HashMap::from([
                 ("summary".to_string(), "High CPU usage detected".to_string()),
-                ("description".to_string(), "CPU usage is {{ $value }}%, exceeding 70% threshold".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/high-cpu".to_string()),
+                (
+                    "description".to_string(),
+                    "CPU usage is {{ $value }}%, exceeding 70% threshold".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/high-cpu".to_string(),
+                ),
             ]),
         }
     }
@@ -189,8 +228,14 @@ impl AlertRules {
             ]),
             annotations: HashMap::from([
                 ("summary".to_string(), "Service is unavailable".to_string()),
-                ("description".to_string(), "Health check status is {{ $value }}, service may be down".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/service-down".to_string()),
+                (
+                    "description".to_string(),
+                    "Health check status is {{ $value }}, service may be down".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/service-down".to_string(),
+                ),
             ]),
         }
     }
@@ -210,9 +255,18 @@ impl AlertRules {
                 ("component".to_string(), "stability".to_string()),
             ]),
             annotations: HashMap::from([
-                ("summary".to_string(), "Application panic detected".to_string()),
-                ("description".to_string(), "{{ $value }} panic(s) detected in the last minute".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/panic".to_string()),
+                (
+                    "summary".to_string(),
+                    "Application panic detected".to_string(),
+                ),
+                (
+                    "description".to_string(),
+                    "{{ $value }} panic(s) detected in the last minute".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/panic".to_string(),
+                ),
             ]),
         }
     }
@@ -232,9 +286,18 @@ impl AlertRules {
                 ("component".to_string(), "connection-pool".to_string()),
             ]),
             annotations: HashMap::from([
-                ("summary".to_string(), "Connection pool nearly exhausted".to_string()),
-                ("description".to_string(), "{{ $value }} active connections, approaching pool limit".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/connection-pool".to_string()),
+                (
+                    "summary".to_string(),
+                    "Connection pool nearly exhausted".to_string(),
+                ),
+                (
+                    "description".to_string(),
+                    "{{ $value }} active connections, approaching pool limit".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/connection-pool".to_string(),
+                ),
             ]),
         }
     }
@@ -255,8 +318,14 @@ impl AlertRules {
             ]),
             annotations: HashMap::from([
                 ("summary".to_string(), "Low disk space".to_string()),
-                ("description".to_string(), "Only {{ $value }}% disk space remaining".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/disk-space".to_string()),
+                (
+                    "description".to_string(),
+                    "Only {{ $value }}% disk space remaining".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/disk-space".to_string(),
+                ),
             ]),
         }
     }
@@ -276,9 +345,18 @@ impl AlertRules {
                 ("component".to_string(), "rate-limiting".to_string()),
             ]),
             annotations: HashMap::from([
-                ("summary".to_string(), "High request rate detected".to_string()),
-                ("description".to_string(), "{{ $value }} requests/min, unusually high traffic".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/high-traffic".to_string()),
+                (
+                    "summary".to_string(),
+                    "High request rate detected".to_string(),
+                ),
+                (
+                    "description".to_string(),
+                    "{{ $value }} requests/min, unusually high traffic".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/high-traffic".to_string(),
+                ),
             ]),
         }
     }
@@ -298,9 +376,18 @@ impl AlertRules {
                 ("component".to_string(), "tool-execution".to_string()),
             ]),
             annotations: HashMap::from([
-                ("summary".to_string(), "Long running operations detected".to_string()),
-                ("description".to_string(), "P95 tool execution time is {{ $value }}s".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/long-operations".to_string()),
+                (
+                    "summary".to_string(),
+                    "Long running operations detected".to_string(),
+                ),
+                (
+                    "description".to_string(),
+                    "P95 tool execution time is {{ $value }}s".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/long-operations".to_string(),
+                ),
             ]),
         }
     }
@@ -320,9 +407,18 @@ impl AlertRules {
                 ("component".to_string(), "health-endpoint".to_string()),
             ]),
             annotations: HashMap::from([
-                ("summary".to_string(), "Health check endpoint failing".to_string()),
-                ("description".to_string(), "Health check endpoint is not responding".to_string()),
-                ("runbook_url".to_string(), "https://docs.example.com/runbooks/health-check".to_string()),
+                (
+                    "summary".to_string(),
+                    "Health check endpoint failing".to_string(),
+                ),
+                (
+                    "description".to_string(),
+                    "Health check endpoint is not responding".to_string(),
+                ),
+                (
+                    "runbook_url".to_string(),
+                    "https://docs.example.com/runbooks/health-check".to_string(),
+                ),
             ]),
         }
     }
@@ -331,33 +427,34 @@ impl AlertRules {
     pub fn export_prometheus_rules() -> String {
         let rules = Self::get_production_rules();
         let mut output = String::new();
-        
+
         output.push_str("groups:\n");
         output.push_str("  - name: bevy_debugger_mcp_alerts\n");
         output.push_str("    rules:\n");
-        
+
         for rule in rules {
             output.push_str(&format!("      - alert: {}\n", rule.name));
-            output.push_str(&format!("        expr: {} {} {}\n", 
-                rule.metric, 
+            output.push_str(&format!(
+                "        expr: {} {} {}\n",
+                rule.metric,
                 Self::condition_to_operator(&rule.condition),
                 rule.threshold
             ));
             output.push_str(&format!("        for: {}\n", rule.duration));
-            
+
             output.push_str("        labels:\n");
             for (key, value) in rule.labels {
                 output.push_str(&format!("          {}: '{}'\n", key, value));
             }
-            
+
             output.push_str("        annotations:\n");
             for (key, value) in rule.annotations {
                 output.push_str(&format!("          {}: '{}'\n", key, value));
             }
-            
+
             output.push('\n');
         }
-        
+
         output
     }
 
@@ -664,13 +761,14 @@ mod tests {
     fn test_alert_rules_generation() {
         let rules = AlertRules::get_production_rules();
         assert!(!rules.is_empty());
-        
+
         // Check that we have the expected critical alerts
-        let critical_rules: Vec<_> = rules.iter()
+        let critical_rules: Vec<_> = rules
+            .iter()
             .filter(|r| r.severity == AlertSeverity::Critical)
             .collect();
         assert!(!critical_rules.is_empty());
-        
+
         // Verify specific rules exist
         assert!(rules.iter().any(|r| r.name == "HighErrorRate"));
         assert!(rules.iter().any(|r| r.name == "BRPConnectionDown"));
@@ -689,7 +787,7 @@ mod tests {
     fn test_json_export() {
         let json_rules = AlertRules::export_json_rules();
         assert!(json_rules.is_ok());
-        
+
         let json_str = json_rules.unwrap();
         assert!(json_str.contains("HighErrorRate"));
         assert!(json_str.contains("Critical"));
@@ -700,15 +798,24 @@ mod tests {
         let dashboard = GrafanaDashboard::generate_dashboard();
         assert!(dashboard["dashboard"]["title"].as_str().is_some());
         assert!(dashboard["dashboard"]["panels"].as_array().is_some());
-        
+
         let panels = dashboard["dashboard"]["panels"].as_array().unwrap();
         assert!(!panels.is_empty());
     }
 
     #[test]
     fn test_condition_operators() {
-        assert_eq!(AlertRules::condition_to_operator(&AlertCondition::GreaterThan), ">");
-        assert_eq!(AlertRules::condition_to_operator(&AlertCondition::LessThan), "<");
-        assert_eq!(AlertRules::condition_to_operator(&AlertCondition::Equal), "==");
+        assert_eq!(
+            AlertRules::condition_to_operator(&AlertCondition::GreaterThan),
+            ">"
+        );
+        assert_eq!(
+            AlertRules::condition_to_operator(&AlertCondition::LessThan),
+            "<"
+        );
+        assert_eq!(
+            AlertRules::condition_to_operator(&AlertCondition::Equal),
+            "=="
+        );
     }
 }

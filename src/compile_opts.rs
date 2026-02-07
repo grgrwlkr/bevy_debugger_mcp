@@ -1,9 +1,8 @@
 /// Compile-time optimization hints and configuration
-/// 
+///
 /// This module provides compile-time optimizations through feature flags,
 /// inline hints, and conditional compilation to minimize overhead when
 /// debugging features are disabled.
-
 use std::hint;
 
 /// Force inline critical performance functions
@@ -59,7 +58,7 @@ macro_rules! if_optimized {
     ($optimized:block, $debug:block) => {
         #[cfg(not(debug_assertions))]
         $optimized
-        
+
         #[cfg(debug_assertions)]
         $debug
     };
@@ -120,32 +119,32 @@ impl CompileConfig {
     pub const fn is_debug() -> bool {
         cfg!(debug_assertions)
     }
-    
+
     /// Check if we're in a release build
     pub const fn is_release() -> bool {
         !cfg!(debug_assertions)
     }
-    
+
     /// Check if profiling is enabled
     pub const fn profiling_enabled() -> bool {
         cfg!(feature = "profiling") || cfg!(debug_assertions)
     }
-    
+
     /// Check if caching is enabled
     pub const fn caching_enabled() -> bool {
         cfg!(feature = "caching") || cfg!(feature = "optimizations")
     }
-    
+
     /// Check if pooling is enabled
     pub const fn pooling_enabled() -> bool {
         cfg!(feature = "pooling") || cfg!(feature = "optimizations")
     }
-    
+
     /// Check if lazy initialization is enabled
     pub const fn lazy_init_enabled() -> bool {
         cfg!(feature = "lazy-init") || cfg!(feature = "optimizations")
     }
-    
+
     /// Get optimization level hint
     pub const fn optimization_level() -> u8 {
         if cfg!(feature = "optimizations") {
@@ -162,13 +161,13 @@ impl CompileConfig {
 pub mod collections {
     #[cfg(feature = "ahash")]
     pub type FastHashMap<K, V> = std::collections::HashMap<K, V, ahash::RandomState>;
-    
+
     #[cfg(not(feature = "ahash"))]
     pub type FastHashMap<K, V> = std::collections::HashMap<K, V>;
-    
+
     #[cfg(feature = "ahash")]
     pub type FastHashSet<T> = std::collections::HashSet<T, ahash::RandomState>;
-    
+
     #[cfg(not(feature = "ahash"))]
     pub type FastHashSet<T> = std::collections::HashSet<T>;
 }
@@ -232,7 +231,7 @@ macro_rules! feature_stub {
             // Real implementation would go here
             $default_value
         }
-        
+
         #[cfg(not(feature = $feature))]
         #[inline(always)]
         pub fn $fn_name() -> $return_type {
@@ -262,17 +261,21 @@ pub mod cpu_features {
     pub fn has_sse4_2() -> bool {
         is_x86_feature_detected!("sse4.2")
     }
-    
+
     #[cfg(target_arch = "x86_64")]
     pub fn has_avx2() -> bool {
         is_x86_feature_detected!("avx2")
     }
-    
+
     #[cfg(not(target_arch = "x86_64"))]
-    pub fn has_sse4_2() -> bool { false }
-    
+    pub fn has_sse4_2() -> bool {
+        false
+    }
+
     #[cfg(not(target_arch = "x86_64"))]
-    pub fn has_avx2() -> bool { false }
+    pub fn has_avx2() -> bool {
+        false
+    }
 }
 
 /// Link-time optimization hints (Linux/Unix)
@@ -317,56 +320,59 @@ static_assert_config!(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_compile_config() {
         // Test that configuration methods work
         assert!(CompileConfig::optimization_level() <= 3);
-        
+
         #[cfg(debug_assertions)]
         assert!(CompileConfig::is_debug());
-        
+
         #[cfg(not(debug_assertions))]
         assert!(CompileConfig::is_release());
     }
-    
+
     #[test]
     fn test_feature_macros() {
         // Test that feature macros compile
         debug_only!({
             // Test debug macro compilation
         });
-        
+
         release_only!({
             // This will only run in release builds
         });
-        
-        if_optimized!({
-            // Optimized version
-        }, {
-            // Debug version
-        });
+
+        if_optimized!(
+            {
+                // Optimized version
+            },
+            {
+                // Debug version
+            }
+        );
     }
-    
+
     #[test]
     fn test_branch_hints() {
         let condition = true;
-        
+
         likely_if!(condition, {
             // This branch is likely
         });
-        
+
         unlikely_if!(!condition, {
             // This branch is unlikely
         });
     }
-    
+
     #[test]
     fn test_collections() {
         let mut map = collections::FastHashMap::default();
         map.insert("key", "value");
         assert_eq!(map.get("key"), Some(&"value"));
-        
+
         let mut set = collections::FastHashSet::default();
         set.insert(42);
         assert!(set.contains(&42));
@@ -374,27 +380,27 @@ mod tests {
 }
 
 // Documentation for optimization techniques used:
-// 
+//
 // 1. **Inline Hints**: Functions marked with #[inline(always)] or #[inline(never)]
 //    to control inlining decisions.
-// 
+//
 // 2. **Branch Prediction**: likely() and unlikely() hints to help the processor
 //    predict branches more accurately.
-// 
+//
 // 3. **Memory Layout**: Alignment hints for better cache performance and SIMD operations.
-// 
+//
 // 4. **Feature Flags**: Conditional compilation to exclude code when features are disabled.
-// 
+//
 // 5. **Zero-Cost Abstractions**: Macros that compile to nothing when features are disabled.
-// 
+//
 // 6. **CPU Feature Detection**: Runtime detection of CPU capabilities for optimal code paths.
-// 
+//
 // 7. **Link-Time Optimization**: Section hints for better code locality.
-// 
+//
 // 8. **Collections**: Using faster hash algorithms when optimization features are enabled.
-// 
+//
 // 9. **Prefetching**: Manual cache prefetching for performance-critical data access.
-// 
+//
 // 10. **Memory Fences**: Explicit memory ordering when needed.
 //
 // Usage in performance-critical code:
@@ -405,12 +411,12 @@ mod tests {
 // }, {
 //     // Slow fallback
 // });
-// 
+//
 // // Feature-gated functionality
 // with_feature!("caching", {
 //     // Only compiled when caching feature is enabled
 // });
-// 
+//
 // // Branch prediction
 // likely_if!(cache_hit, {
 //     return cached_value;

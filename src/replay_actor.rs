@@ -312,7 +312,10 @@ impl ReplayActor {
                 let result = self.pause().await;
                 let _ = respond_to.send(result);
             }
-            ReplayMessage::Seek { position, respond_to } => {
+            ReplayMessage::Seek {
+                position,
+                respond_to,
+            } => {
                 let result = self.seek(position).await;
                 let _ = respond_to.send(result);
             }
@@ -328,7 +331,11 @@ impl ReplayActor {
                 let status = self.get_playback_status();
                 let _ = respond_to.send(status);
             }
-            ReplayMessage::CreateBranch { name, description, respond_to } => {
+            ReplayMessage::CreateBranch {
+                name,
+                description,
+                respond_to,
+            } => {
                 let result = self.create_branch(name, description).await;
                 let _ = respond_to.send(result);
             }
@@ -336,23 +343,41 @@ impl ReplayActor {
                 let branches = self.list_branches();
                 let _ = respond_to.send(branches);
             }
-            ReplayMessage::SwitchBranch { branch_id, respond_to } => {
+            ReplayMessage::SwitchBranch {
+                branch_id,
+                respond_to,
+            } => {
                 let result = self.switch_branch(branch_id).await;
                 let _ = respond_to.send(result);
             }
-            ReplayMessage::AddModification { modification, respond_to } => {
+            ReplayMessage::AddModification {
+                modification,
+                respond_to,
+            } => {
                 let result = self.add_modification(modification).await;
                 let _ = respond_to.send(result);
             }
-            ReplayMessage::MergeBranch { source, target, strategy, respond_to } => {
+            ReplayMessage::MergeBranch {
+                source,
+                target,
+                strategy,
+                respond_to,
+            } => {
                 let result = self.merge_branch(source, target, strategy).await;
                 let _ = respond_to.send(result);
             }
-            ReplayMessage::CompareBranches { branch1, branch2, respond_to } => {
+            ReplayMessage::CompareBranches {
+                branch1,
+                branch2,
+                respond_to,
+            } => {
                 let comparison = self.compare_branches(branch1, branch2);
                 let _ = respond_to.send(comparison);
             }
-            ReplayMessage::DeleteBranch { branch_id, respond_to } => {
+            ReplayMessage::DeleteBranch {
+                branch_id,
+                respond_to,
+            } => {
                 let result = self.delete_branch(branch_id).await;
                 let _ = respond_to.send(result);
             }
@@ -371,7 +396,7 @@ impl ReplayActor {
 
         self.state.current_recording_config = Some(config.clone());
         self.state.recording_state = RecordingState::new(config.clone());
-        
+
         info!("Recording started with config: {:?}", config);
         Ok(self.get_status())
     }
@@ -389,7 +414,9 @@ impl ReplayActor {
             current_frame: 0,
             total_frames: 0,
             recording_duration: Duration::ZERO,
-            sample_rate: self.state.current_recording_config
+            sample_rate: self
+                .state
+                .current_recording_config
                 .as_ref()
                 .map(|c| c.sample_rate as f64)
                 .unwrap_or(60.0),
@@ -444,7 +471,11 @@ impl ReplayActor {
         self.state.playback_status.clone()
     }
 
-    async fn create_branch(&mut self, name: String, description: Option<String>) -> Result<BranchId> {
+    async fn create_branch(
+        &mut self,
+        name: String,
+        description: Option<String>,
+    ) -> Result<BranchId> {
         // Implementation would create new branch
         Ok(BranchId::new())
     }
@@ -464,7 +495,12 @@ impl ReplayActor {
         Ok(())
     }
 
-    async fn merge_branch(&mut self, _source: BranchId, _target: BranchId, _strategy: MergeStrategy) -> Result<()> {
+    async fn merge_branch(
+        &mut self,
+        _source: BranchId,
+        _target: BranchId,
+        _strategy: MergeStrategy,
+    ) -> Result<()> {
         // Implementation would merge branches
         Ok(())
     }
@@ -506,25 +542,37 @@ impl ReplayActorHandle {
     pub async fn start_recording(&self, config: RecordingConfig) -> Result<ReplayStatus> {
         let (respond_to, response) = oneshot::channel();
         let message = ReplayMessage::StartRecording { config, respond_to };
-        
-        self.sender.send(message).map_err(|_| Error::Internal("Replay actor disconnected".to_string()))?;
-        response.await.map_err(|_| Error::Internal("Response channel closed".to_string()))?
+
+        self.sender
+            .send(message)
+            .map_err(|_| Error::Internal("Replay actor disconnected".to_string()))?;
+        response
+            .await
+            .map_err(|_| Error::Internal("Response channel closed".to_string()))?
     }
 
     pub async fn stop_recording(&self) -> Result<ReplayStatus> {
         let (respond_to, response) = oneshot::channel();
         let message = ReplayMessage::StopRecording { respond_to };
-        
-        self.sender.send(message).map_err(|_| Error::Internal("Replay actor disconnected".to_string()))?;
-        response.await.map_err(|_| Error::Internal("Response channel closed".to_string()))?
+
+        self.sender
+            .send(message)
+            .map_err(|_| Error::Internal("Replay actor disconnected".to_string()))?;
+        response
+            .await
+            .map_err(|_| Error::Internal("Response channel closed".to_string()))?
     }
 
     pub async fn get_status(&self) -> Result<ReplayStatus> {
         let (respond_to, response) = oneshot::channel();
         let message = ReplayMessage::GetStatus { respond_to };
-        
-        self.sender.send(message).map_err(|_| Error::Internal("Replay actor disconnected".to_string()))?;
-        Ok(response.await.map_err(|_| Error::Internal("Response channel closed".to_string()))?)
+
+        self.sender
+            .send(message)
+            .map_err(|_| Error::Internal("Replay actor disconnected".to_string()))?;
+        Ok(response
+            .await
+            .map_err(|_| Error::Internal("Response channel closed".to_string()))?)
     }
 
     // Add similar methods for all other operations...
@@ -537,19 +585,23 @@ static REPLAY_ACTOR_HANDLE: std::sync::OnceLock<ReplayActorHandle> = std::sync::
 pub async fn initialize_replay_actor(brp_client: Arc<BrpClient>) -> Result<()> {
     let (sender, receiver) = mpsc::unbounded_channel();
     let handle = ReplayActorHandle::new(sender);
-    
+
     // Store the handle globally
-    REPLAY_ACTOR_HANDLE.set(handle).map_err(|_| Error::Internal("Replay actor already initialized".to_string()))?;
-    
+    REPLAY_ACTOR_HANDLE
+        .set(handle)
+        .map_err(|_| Error::Internal("Replay actor already initialized".to_string()))?;
+
     // Spawn the actor
     let actor = ReplayActor::new(receiver, brp_client);
     tokio::spawn(actor.run());
-    
+
     info!("Replay actor initialized successfully");
     Ok(())
 }
 
 /// Get the global replay actor handle
 pub fn get_replay_actor_handle() -> Result<&'static ReplayActorHandle> {
-    REPLAY_ACTOR_HANDLE.get().ok_or_else(|| Error::Internal("Replay actor not initialized".to_string()))
+    REPLAY_ACTOR_HANDLE
+        .get()
+        .ok_or_else(|| Error::Internal("Replay actor not initialized".to_string()))
 }

@@ -17,27 +17,26 @@
  */
 
 //! Bevy Reflection Integration Module
-//! 
+//!
 //! This module contains the complete reflection integration system including:
 //! - Core reflection inspector and metadata structures
 //! - Custom inspectors for Bevy-specific types
 //! - TypeRegistry integration tools
 //! - Reflection-based query optimization
 
-pub mod inspector;
 pub mod custom_inspectors;
-pub mod type_registry_tools;
+pub mod inspector;
 pub mod reflection_queries;
+pub mod type_registry_tools;
 
 // Re-export main types from inspector module
 pub use inspector::{
-    BevyReflectionInspector, ReflectionMetadata, FieldMetadata, TypeCategory,
-    ReflectionInspectionResult, InspectedValue, CustomInspector,
-    ReflectionDiffResult, FieldDiff, ChangeType, ChangeSeverity, DiffSummary,
-    TransformInspector,
+    BevyReflectionInspector, ChangeSeverity, ChangeType, CustomInspector, DiffSummary, FieldDiff,
+    FieldMetadata, InspectedValue, ReflectionDiffResult, ReflectionInspectionResult,
+    ReflectionMetadata, TransformInspector, TypeCategory,
 };
 
 // Export submodule types
 pub use custom_inspectors::*;
-pub use type_registry_tools::*;
 pub use reflection_queries::*;
+pub use type_registry_tools::*;

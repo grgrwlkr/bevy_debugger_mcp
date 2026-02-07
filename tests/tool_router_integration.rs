@@ -2,14 +2,16 @@
  * Integration tests for tool router functionality
  */
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use bevy_debugger_mcp::mcp_tools::{BevyDebuggerTools, ObserveRequest, ExperimentRequest, HypothesisRequest};
 use bevy_debugger_mcp::brp_client::BrpClient;
 use bevy_debugger_mcp::config::Config;
-use rmcp::handler::server::{ServerHandler, tool::Parameters};
-use rmcp::model::{Content, CallToolResult};
+use bevy_debugger_mcp::mcp_tools::{
+    BevyDebuggerTools, ExperimentRequest, HypothesisRequest, ObserveRequest,
+};
+use rmcp::handler::server::{tool::Parameters, ServerHandler};
+use rmcp::model::{CallToolResult, Content};
 use serde_json::Value;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Test that BevyDebuggerTools can be created successfully
 #[tokio::test]
@@ -17,7 +19,7 @@ async fn test_tools_creation() {
     let config = Config::default();
     let brp_client = Arc::new(RwLock::new(BrpClient::new(config)));
     let tools = BevyDebuggerTools::new(brp_client);
-    
+
     // Test ServerHandler implementation
     let server_info = tools.get_info();
     assert_eq!(server_info.server_info.name, "bevy-debugger-mcp");
@@ -31,15 +33,15 @@ async fn test_observe_tool_structure() {
     let config = Config::default();
     let brp_client = Arc::new(RwLock::new(BrpClient::new(config)));
     let tools = BevyDebuggerTools::new(brp_client);
-    
+
     let observe_req = ObserveRequest {
         query: "test query".to_string(),
         diff: false,
         detailed: false,
     };
-    
+
     let params = Parameters(observe_req);
-    
+
     // This should fail due to BRP connection, but structure should be correct
     let result = tools.observe(params).await;
     match result {
@@ -60,15 +62,15 @@ async fn test_experiment_tool_structure() {
     let config = Config::default();
     let brp_client = Arc::new(RwLock::new(BrpClient::new(config)));
     let tools = BevyDebuggerTools::new(brp_client);
-    
+
     let experiment_req = ExperimentRequest {
         experiment_type: "test_experiment".to_string(),
         params: Value::Null,
         duration: Some(1.0),
     };
-    
+
     let params = Parameters(experiment_req);
-    
+
     // This should fail due to BRP connection, but structure should be correct
     let result = tools.experiment(params).await;
     match result {
@@ -87,15 +89,15 @@ async fn test_hypothesis_tool_structure() {
     let config = Config::default();
     let brp_client = Arc::new(RwLock::new(BrpClient::new(config)));
     let tools = BevyDebuggerTools::new(brp_client);
-    
+
     let hypothesis_req = HypothesisRequest {
         hypothesis: "test hypothesis".to_string(),
         confidence: 0.8,
         context: None,
     };
-    
+
     let params = Parameters(hypothesis_req);
-    
+
     // This should fail due to BRP connection, but structure should be correct
     let result = tools.hypothesis(params).await;
     match result {
@@ -116,18 +118,18 @@ fn test_parameter_serialization() {
         diff: true,
         detailed: false,
     };
-    
+
     let json = serde_json::to_string(&observe_req).unwrap();
     let deserialized: ObserveRequest = serde_json::from_str(&json).unwrap();
     assert_eq!(observe_req.query, deserialized.query);
     assert_eq!(observe_req.diff, deserialized.diff);
-    
+
     let experiment_req = ExperimentRequest {
         experiment_type: "test".to_string(),
         params: Value::String("test".to_string()),
         duration: Some(5.0),
     };
-    
+
     let json = serde_json::to_string(&experiment_req).unwrap();
     let deserialized: ExperimentRequest = serde_json::from_str(&json).unwrap();
     assert_eq!(experiment_req.experiment_type, deserialized.experiment_type);

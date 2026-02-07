@@ -175,25 +175,25 @@ impl WorkflowAutomation {
             },
         }
     }
-    
+
     /// Analyze patterns and create automation opportunities
     pub async fn analyze_automation_opportunities(&self) -> Result<Vec<AutomatedWorkflow>> {
         let mut opportunities = Vec::new();
-        
+
         // Get patterns from learning system
         let patterns = self.get_frequent_patterns().await?;
-        
+
         for pattern in patterns {
             if self.is_automation_candidate(&pattern).await {
                 let workflow = self.create_workflow_from_pattern(pattern).await?;
                 opportunities.push(workflow);
             }
         }
-        
+
         info!("Found {} automation opportunities", opportunities.len());
         Ok(opportunities)
     }
-    
+
     /// Check if a pattern is suitable for automation
     async fn is_automation_candidate(&self, pattern: &DebugPattern) -> bool {
         // Check minimum requirements
@@ -202,20 +202,28 @@ impl WorkflowAutomation {
             && pattern.sequence.len() <= MAX_AUTOMATED_STEPS
             && self.is_safe_for_automation(&pattern.sequence).await
     }
-    
+
     /// Check if command sequence is safe for automation
-    async fn is_safe_for_automation(&self, _commands: &[crate::pattern_learning::AnonymizedCommand]) -> bool {
+    async fn is_safe_for_automation(
+        &self,
+        _commands: &[crate::pattern_learning::AnonymizedCommand],
+    ) -> bool {
         // For now, be conservative and only allow read-only operations
         // In a full implementation, this would analyze each command type
         true
     }
-    
+
     /// Create workflow from pattern
-    async fn create_workflow_from_pattern(&self, pattern: DebugPattern) -> Result<AutomatedWorkflow> {
+    async fn create_workflow_from_pattern(
+        &self,
+        pattern: DebugPattern,
+    ) -> Result<AutomatedWorkflow> {
         // Convert anonymized commands back to concrete commands
         // This is simplified - in practice would need more sophisticated mapping
-        let commands = self.convert_anonymized_to_commands(&pattern.sequence).await?;
-        
+        let commands = self
+            .convert_anonymized_to_commands(&pattern.sequence)
+            .await?;
+
         let workflow = AutomatedWorkflow {
             id: format!("auto_{}", pattern.id),
             name: self.generate_workflow_name(&pattern),
@@ -228,10 +236,10 @@ impl WorkflowAutomation {
             last_executed: None,
             checkpoints: self.calculate_checkpoints(&pattern.sequence),
         };
-        
+
         Ok(workflow)
     }
-    
+
     /// Execute an automated workflow
     pub async fn execute_workflow(
         &self,
@@ -240,13 +248,16 @@ impl WorkflowAutomation {
         preferences: Option<UserPreferences>,
     ) -> Result<ExecutionResult> {
         let workflows = self.workflows.read().await;
-        let workflow = workflows.get(workflow_id)
-            .ok_or_else(|| crate::error::Error::Validation(format!("Workflow not found: {}", workflow_id)))?
+        let workflow = workflows
+            .get(workflow_id)
+            .ok_or_else(|| {
+                crate::error::Error::Validation(format!("Workflow not found: {}", workflow_id))
+            })?
             .clone();
         drop(workflows);
-        
+
         let prefs = preferences.unwrap_or_else(|| self.default_preferences.clone());
-        
+
         // Check if automation is enabled
         if !prefs.automation_enabled {
             return Ok(ExecutionResult::Failed {
@@ -255,7 +266,7 @@ impl WorkflowAutomation {
                 rollback_performed: false,
             });
         }
-        
+
         // Check if workflow requires approval
         if !workflow.user_approved && prefs.require_confirmation {
             return Ok(ExecutionResult::RequiresApproval {
@@ -263,7 +274,7 @@ impl WorkflowAutomation {
                 next_step: 0,
             });
         }
-        
+
         // Create execution context
         let context = ExecutionContext {
             session_id: session_id.clone(),
@@ -272,28 +283,28 @@ impl WorkflowAutomation {
             start_time: Instant::now(),
             checkpoints: Vec::new(),
         };
-        
+
         // Store active execution
         {
             let mut executions = self.active_executions.write().await;
             executions.insert(session_id.clone(), context);
         }
-        
+
         // Execute workflow
         let result = self.execute_workflow_steps(&workflow, &session_id).await;
-        
+
         // Cleanup active execution
         {
             let mut executions = self.active_executions.write().await;
             executions.remove(&session_id);
         }
-        
+
         // Update workflow statistics
         self.update_workflow_stats(&workflow.id, &result).await?;
-        
+
         result
     }
-    
+
     /// Execute workflow steps with checkpointing
     async fn execute_workflow_steps(
         &self,
@@ -302,13 +313,13 @@ impl WorkflowAutomation {
     ) -> Result<ExecutionResult> {
         let mut results = Vec::new();
         let start_time = Instant::now();
-        
+
         for (step_index, command) in workflow.commands.iter().enumerate() {
             // Check for checkpoint
             if workflow.checkpoints.contains(&step_index) {
                 self.create_checkpoint(session_id, step_index).await?;
             }
-            
+
             // Execute command (simplified - would integrate with actual command execution)
             match self.execute_command(command.clone(), session_id).await {
                 Ok(result) => {
@@ -317,19 +328,20 @@ impl WorkflowAutomation {
                 }
                 Err(e) => {
                     warn!("Workflow step {} failed: {}", step_index, e);
-                    
+
                     // Check if auto-rollback is enabled
                     let should_rollback = {
                         let executions = self.active_executions.read().await;
-                        executions.get(session_id)
+                        executions
+                            .get(session_id)
                             .map(|ctx| ctx.user_preferences.auto_rollback)
                             .unwrap_or(false)
                     };
-                    
+
                     if should_rollback {
                         self.perform_rollback(session_id, step_index).await?;
                     }
-                    
+
                     return Ok(ExecutionResult::Failed {
                         failed_step: step_index,
                         error_message: e.to_string(),
@@ -338,91 +350,108 @@ impl WorkflowAutomation {
                 }
             }
         }
-        
+
         Ok(ExecutionResult::Success {
             steps_executed: workflow.commands.len(),
             total_time: start_time.elapsed(),
             results,
         })
     }
-    
+
     /// Approve a workflow for automation
     pub async fn approve_workflow(&self, workflow_id: &str) -> Result<()> {
         let mut workflows = self.workflows.write().await;
-        
+
         if let Some(workflow) = workflows.get_mut(workflow_id) {
             workflow.user_approved = true;
             info!("Workflow {} approved for automation", workflow_id);
             Ok(())
         } else {
-            Err(crate::error::Error::Validation(format!("Workflow not found: {}", workflow_id)))
+            Err(crate::error::Error::Validation(format!(
+                "Workflow not found: {}",
+                workflow_id
+            )))
         }
     }
-    
+
     /// Get available workflows
     pub async fn get_workflows(&self) -> Vec<AutomatedWorkflow> {
         let workflows = self.workflows.read().await;
         workflows.values().cloned().collect()
     }
-    
+
     /// Helper methods (simplified implementations)
     async fn get_frequent_patterns(&self) -> Result<Vec<DebugPattern>> {
         // In practice, would query the pattern learning system
         Ok(Vec::new())
     }
-    
+
     async fn convert_anonymized_to_commands(
         &self,
         _anonymized: &[crate::pattern_learning::AnonymizedCommand],
     ) -> Result<Vec<DebugCommand>> {
         // Simplified conversion - in practice would use sophisticated mapping
-        Ok(vec![DebugCommand::GetSystemInfo { 
-            system_name: None, 
-            include_scheduling: None 
+        Ok(vec![DebugCommand::GetSystemInfo {
+            system_name: None,
+            include_scheduling: None,
         }])
     }
-    
+
     fn generate_workflow_name(&self, pattern: &DebugPattern) -> String {
-        format!("Auto Workflow ({}% success)", (pattern.success_rate * 100.0) as i32)
+        format!(
+            "Auto Workflow ({}% success)",
+            (pattern.success_rate * 100.0) as i32
+        )
     }
-    
-    fn calculate_checkpoints(&self, sequence: &[crate::pattern_learning::AnonymizedCommand]) -> Vec<usize> {
+
+    fn calculate_checkpoints(
+        &self,
+        sequence: &[crate::pattern_learning::AnonymizedCommand],
+    ) -> Vec<usize> {
         let mut checkpoints = Vec::new();
         for i in (0..sequence.len()).step_by(CHECKPOINT_INTERVAL) {
             checkpoints.push(i);
         }
         checkpoints
     }
-    
+
     async fn create_checkpoint(&self, session_id: &str, step_index: usize) -> Result<()> {
-        debug!("Creating checkpoint for session {} at step {}", session_id, step_index);
+        debug!(
+            "Creating checkpoint for session {} at step {}",
+            session_id, step_index
+        );
         Ok(())
     }
-    
+
     async fn execute_command(&self, _command: DebugCommand, _session_id: &str) -> Result<String> {
         // Simplified execution - would integrate with actual command processor
         Ok("Command executed successfully".to_string())
     }
-    
+
     async fn perform_rollback(&self, session_id: &str, _failed_step: usize) -> Result<()> {
         debug!("Performing rollback for session {}", session_id);
         Ok(())
     }
-    
-    async fn update_workflow_stats(&self, workflow_id: &str, result: &Result<ExecutionResult>) -> Result<()> {
+
+    async fn update_workflow_stats(
+        &self,
+        workflow_id: &str,
+        result: &Result<ExecutionResult>,
+    ) -> Result<()> {
         let mut workflows = self.workflows.write().await;
-        
+
         if let Some(workflow) = workflows.get_mut(workflow_id) {
             workflow.execution_count += 1;
             workflow.last_executed = Some(Instant::now());
-            
+
             // Update success rate based on result
             let success = matches!(result, Ok(ExecutionResult::Success { .. }));
             let old_rate = workflow.success_rate;
             let count = workflow.execution_count as f64;
-            workflow.success_rate = (old_rate * (count - 1.0) + if success { 1.0 } else { 0.0 }) / count;
+            workflow.success_rate =
+                (old_rate * (count - 1.0) + if success { 1.0 } else { 0.0 }) / count;
         }
-        
+
         Ok(())
     }
 }

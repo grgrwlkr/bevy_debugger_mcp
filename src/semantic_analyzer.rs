@@ -131,7 +131,7 @@ impl SemanticQueryBuilder {
         self.thresholds = thresholds;
         self
     }
-    
+
     /// Set custom thresholds from reference (memory optimized)
     #[must_use]
     pub fn with_thresholds_ref(mut self, thresholds: &SemanticThresholds) -> Self {
@@ -183,7 +183,7 @@ impl SemanticQueryBuilder {
                     Some(where_clauses)
                 },
             }),
-            limit: Some(100), // Reasonable default for semantic queries
+            limit: Some(100),    // Reasonable default for semantic queries
             strict: Some(false), // Non-strict mode for semantic queries
         };
 
@@ -350,7 +350,7 @@ struct SemanticPattern {
 
 impl SemanticAnalyzer {
     /// Create a new semantic analyzer with default thresholds
-    /// 
+    ///
     /// # Errors
     /// Returns error if regex patterns fail to compile
     pub fn new() -> Result<Self> {
@@ -358,7 +358,7 @@ impl SemanticAnalyzer {
     }
 
     /// Create a semantic analyzer with custom thresholds
-    /// 
+    ///
     /// # Errors
     /// Returns error if regex patterns fail to compile
     pub fn with_thresholds(thresholds: SemanticThresholds) -> Result<Self> {

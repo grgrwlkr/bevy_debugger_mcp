@@ -38,10 +38,16 @@ impl HeartbeatMessage {
     fn to_json(&self) -> String {
         match self {
             HeartbeatMessage::Ping { id, timestamp } => {
-                format!(r#"{{"type":"heartbeat_ping","id":"{}","timestamp":{}}}"#, id, timestamp)
+                format!(
+                    r#"{{"type":"heartbeat_ping","id":"{}","timestamp":{}}}"#,
+                    id, timestamp
+                )
             }
             HeartbeatMessage::Pong { id, timestamp } => {
-                format!(r#"{{"type":"heartbeat_pong","id":"{}","timestamp":{}}}"#, id, timestamp)
+                format!(
+                    r#"{{"type":"heartbeat_pong","id":"{}","timestamp":{}}}"#,
+                    id, timestamp
+                )
             }
         }
     }
@@ -123,8 +129,10 @@ where
             return Ok(()); // Already running
         }
 
-        info!("Starting heartbeat service (interval: {:?}, timeout: {:?})", 
-              self.config.interval, self.config.timeout);
+        info!(
+            "Starting heartbeat service (interval: {:?}, timeout: {:?})",
+            self.config.interval, self.config.timeout
+        );
 
         self.is_running.store(true, Ordering::Relaxed);
 
@@ -140,7 +148,7 @@ where
     /// Stop the heartbeat service
     pub async fn stop(&mut self) {
         info!("Stopping heartbeat service");
-        
+
         self.is_running.store(false, Ordering::Relaxed);
 
         if let Some(handle) = self.heartbeat_handle.take() {
@@ -183,7 +191,7 @@ where
 
         let handle = tokio::spawn(async move {
             let mut heartbeat_interval = interval(config.interval);
-            
+
             while is_running.load(Ordering::Relaxed) {
                 heartbeat_interval.tick().await;
 
@@ -194,8 +202,11 @@ where
                     .unwrap_or_default()
                     .as_millis() as u64;
 
-                let ping_message = HeartbeatMessage::Ping { id: ping_id, timestamp };
-                
+                let ping_message = HeartbeatMessage::Ping {
+                    id: ping_id,
+                    timestamp,
+                };
+
                 // Record pending ping
                 {
                     let mut pending = pending_pings.lock().await;
@@ -232,7 +243,8 @@ where
                 // Clean up expired pending pings
                 {
                     let mut pending = pending_pings.lock().await;
-                    let timeout_threshold = Instant::now() - config.timeout - Duration::from_secs(1);
+                    let timeout_threshold =
+                        Instant::now() - config.timeout - Duration::from_secs(1);
                     pending.retain(|_, sent_at| *sent_at > timeout_threshold);
                 }
             }
@@ -252,7 +264,7 @@ where
             while is_running.load(Ordering::Relaxed) {
                 let message_result = {
                     let mut ws = websocket.lock().await;
-                    
+
                     // Use timeout to prevent blocking indefinitely
                     timeout(Duration::from_millis(100), ws.next()).await
                 };
@@ -286,12 +298,17 @@ where
                                     } else {
                                         let current_avg = stats_guard.avg_round_trip_time;
                                         stats_guard.avg_round_trip_time = Duration::from_nanos(
-                                            ((current_avg.as_nanos() as u64 * (total_responses - 1)) 
-                                             + round_trip_time.as_nanos() as u64) / total_responses
+                                            ((current_avg.as_nanos() as u64
+                                                * (total_responses - 1))
+                                                + round_trip_time.as_nanos() as u64)
+                                                / total_responses,
                                         );
                                     }
 
-                                    debug!("Heartbeat pong received: {} (RTT: {:?})", id, round_trip_time);
+                                    debug!(
+                                        "Heartbeat pong received: {} (RTT: {:?})",
+                                        id, round_trip_time
+                                    );
                                 }
                             }
                         }
@@ -325,8 +342,11 @@ where
             .unwrap_or_default()
             .as_millis() as u64;
 
-        let ping_message = HeartbeatMessage::Ping { id: ping_id, timestamp };
-        
+        let ping_message = HeartbeatMessage::Ping {
+            id: ping_id,
+            timestamp,
+        };
+
         // Record pending ping
         {
             let mut pending = self.pending_pings.lock().await;
@@ -335,7 +355,8 @@ where
 
         // Send ping
         let mut ws = self.websocket.lock().await;
-        ws.send(Message::Text(ping_message.to_json())).await
+        ws.send(Message::Text(ping_message.to_json()))
+            .await
             .map_err(|e| format!("Failed to send ping: {:?}", e))?;
 
         // Update stats
@@ -348,21 +369,28 @@ where
     /// Parse heartbeat message from JSON
     fn parse_heartbeat_message(text: &str) -> Result<HeartbeatMessage, serde_json::Error> {
         let value: serde_json::Value = serde_json::from_str(text)?;
-        
+
         match value.get("type").and_then(|t| t.as_str()) {
             Some("heartbeat_pong") => {
-                let id = value.get("id")
+                let id = value
+                    .get("id")
                     .and_then(|i| i.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
-                    .ok_or_else(|| serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid ping ID")))?;
-                
-                let timestamp = value.get("timestamp")
-                    .and_then(|t| t.as_u64())
-                    .unwrap_or(0);
+                    .ok_or_else(|| {
+                        serde_json::Error::io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Invalid ping ID",
+                        ))
+                    })?;
+
+                let timestamp = value.get("timestamp").and_then(|t| t.as_u64()).unwrap_or(0);
 
                 Ok(HeartbeatMessage::Pong { id, timestamp })
             }
-            _ => Err(serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::InvalidData, "Not a heartbeat message")))
+            _ => Err(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Not a heartbeat message",
+            ))),
         }
     }
 }
@@ -374,11 +402,11 @@ where
 {
     fn drop(&mut self) {
         self.is_running.store(false, Ordering::Relaxed);
-        
+
         if let Some(handle) = self.heartbeat_handle.take() {
             handle.abort();
         }
-        
+
         if let Some(handle) = self.response_handle.take() {
             handle.abort();
         }
@@ -391,7 +419,7 @@ mod tests {
     use futures_util::{stream, Sink, Stream};
     use std::pin::Pin;
     use std::task::{Context, Poll};
-    
+
     // Mock WebSocket for testing
     struct MockWebSocket {
         messages: Vec<Message>,
@@ -410,7 +438,10 @@ mod tests {
     impl Sink<Message> for MockWebSocket {
         type Error = tokio_tungstenite::tungstenite::Error;
 
-        fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
 
@@ -422,11 +453,17 @@ mod tests {
             Ok(())
         }
 
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
 
-        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
     }
@@ -446,9 +483,9 @@ mod tests {
         let mut stats = HeartbeatStats::default();
         stats.total_pings_sent = 10;
         stats.total_pongs_received = 8;
-        
+
         assert_eq!(stats.success_rate(), 80.0);
-        
+
         stats.consecutive_failures = 2;
         assert!(stats.is_healthy(3));
         assert!(!stats.is_healthy(2));
@@ -456,11 +493,11 @@ mod tests {
 
     #[test]
     fn test_heartbeat_message_serialization() {
-        let ping = HeartbeatMessage::Ping { 
-            id: Uuid::new_v4(), 
-            timestamp: 1234567890 
+        let ping = HeartbeatMessage::Ping {
+            id: Uuid::new_v4(),
+            timestamp: 1234567890,
         };
-        
+
         let json = ping.to_json();
         assert!(json.contains("heartbeat_ping"));
         assert!(json.contains("1234567890"));
@@ -470,10 +507,10 @@ mod tests {
     async fn test_heartbeat_service_creation() {
         let mock_ws = MockWebSocket::new();
         let config = HeartbeatConfig::default();
-        
+
         let service = HeartbeatService::new(mock_ws, config);
         let stats = service.get_stats().await;
-        
+
         assert_eq!(stats.total_pings_sent, 0);
         assert_eq!(stats.success_rate(), 100.0);
     }

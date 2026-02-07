@@ -149,24 +149,26 @@ pub mod prelude {
     pub use crate::brp_client::BrpClient;
     pub use crate::brp_messages::{BrpRequest, BrpResponse};
     pub use crate::error::{Error, Result};
-    pub use crate::query_parser::{QueryParser, RegexQueryParser};
-    pub use crate::query_builder::{QueryBuilder, QueryValidator, QueryCostEstimator, QueryOptimizer};
-    pub use crate::query_builder_processor::QueryBuilderProcessor;
-    pub use crate::mcp_server::McpServer;
     pub use crate::experiment_system::{Action, ActionExecutor, ActionResult};
-    pub use crate::hypothesis_system::{Hypothesis, TestRunner, TestResult};
-    pub use crate::timeline_branching::{TimelineBranchManager, BranchId};
-    pub use crate::recording_system::{Recording, RecordingState};
+    pub use crate::hypothesis_system::{Hypothesis, TestResult, TestRunner};
+    pub use crate::mcp_server::McpServer;
     pub use crate::playback_system::PlaybackState;
-    pub use crate::session_manager::{SessionManager, SessionManagerConfig, DebugSession};
+    pub use crate::query_builder::{
+        QueryBuilder, QueryCostEstimator, QueryOptimizer, QueryValidator,
+    };
+    pub use crate::query_builder_processor::QueryBuilderProcessor;
+    pub use crate::query_parser::{QueryParser, RegexQueryParser};
+    pub use crate::recording_system::{Recording, RecordingState};
+    pub use crate::session_manager::{DebugSession, SessionManager, SessionManagerConfig};
     pub use crate::session_processor::SessionProcessor;
+    pub use crate::timeline_branching::{BranchId, TimelineBranchManager};
 }
 
 // Core functionality
-pub mod error;
-pub mod config;
 pub mod circuit_breaker;
+pub mod config;
 pub mod connection_pool;
+pub mod error;
 pub mod heartbeat;
 
 // Communication
@@ -185,10 +187,10 @@ pub mod mcp_tools;
 pub mod query_builder_processor;
 
 // Performance profiling and visual debugging
-pub mod system_profiler;
-pub mod system_profiler_processor;
 pub mod memory_profiler;
 pub mod memory_profiler_processor;
+pub mod system_profiler;
+pub mod system_profiler_processor;
 pub mod visual_debug_overlay;
 pub mod visual_debug_overlay_processor;
 
@@ -204,8 +206,8 @@ pub mod performance_budget_processor;
 pub mod visual_overlays;
 
 // Query and observation
-pub mod query_parser;
 pub mod query_builder;
+pub mod query_parser;
 pub mod semantic_analyzer;
 
 // Experimentation and testing
@@ -214,14 +216,14 @@ pub mod hypothesis_system;
 pub mod stress_test_system;
 
 // State management
-pub mod recording_system;
-pub mod playback_system;
-pub mod timeline_branching;
 pub mod checkpoint;
-pub mod state_diff;
+pub mod playback_system;
+pub mod recording_system;
+pub mod replay_actor;
 pub mod session_manager;
 pub mod session_processor;
-pub mod replay_actor;
+pub mod state_diff;
+pub mod timeline_branching;
 
 // Analysis and monitoring
 pub mod anomaly_detector;
@@ -229,19 +231,19 @@ pub mod diagnostics;
 pub mod resource_manager;
 
 // Infrastructure
-pub mod tool_orchestration;
-pub mod dead_letter_queue;
-pub mod lazy_init;
-pub mod command_cache;
-pub mod response_pool;
-pub mod profiling;
-pub mod compile_opts;
-pub mod memory_optimization_tracker;
-pub mod memory_pools;
-pub mod deadlock_detector;
-pub mod lock_contention_benchmark;
 pub mod benchmark_runner;
 pub mod brp_client_refactored;
+pub mod command_cache;
+pub mod compile_opts;
+pub mod dead_letter_queue;
+pub mod deadlock_detector;
+pub mod lazy_init;
+pub mod lock_contention_benchmark;
+pub mod memory_optimization_tracker;
+pub mod memory_pools;
+pub mod profiling;
+pub mod response_pool;
+pub mod tool_orchestration;
 pub mod tools;
 
 // Panic prevention and reliability testing
@@ -249,24 +251,24 @@ pub mod tools;
 pub mod panic_prevention_tests;
 
 // Machine learning and pattern recognition (Epic BEVDBG-013)
+pub mod hot_reload;
 pub mod pattern_learning;
 pub mod suggestion_engine;
 pub mod workflow_automation;
-pub mod hot_reload;
 
 // Bevy reflection integration (Epic BEVDBG-012)
 pub mod bevy_reflection;
 
 // Query performance optimization (Epic BEVDBG-014)
-pub mod query_optimization;
 pub mod parallel_query_executor;
+pub mod query_optimization;
 pub mod query_optimization_guide;
 
 // Production features
-pub mod security_config;
-pub mod security;
-pub mod secure_mcp_tools;
 pub mod bevy_observability_integration;
+pub mod secure_mcp_tools;
+pub mod security;
+pub mod security_config;
 
 // Epic 6: Production features - Observability stack
 #[cfg(feature = "observability")]

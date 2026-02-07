@@ -23,9 +23,8 @@ fn get_recording_state() -> &'static RecordingState {
 }
 
 fn get_playback_controller() -> &'static Arc<RwLock<PlaybackController>> {
-    PLAYBACK_CONTROLLER.get_or_init(|| {
-        Arc::new(RwLock::new(PlaybackController::new(Box::new(DirectSync))))
-    })
+    PLAYBACK_CONTROLLER
+        .get_or_init(|| Arc::new(RwLock::new(PlaybackController::new(Box::new(DirectSync)))))
 }
 
 fn get_branch_manager() -> &'static Arc<RwLock<TimelineBranchManager>> {

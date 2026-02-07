@@ -1,5 +1,6 @@
+use bevy_debugger_mcp::brp_client::BrpClient;
 /// Integration tests for Debug Session Management functionality
-/// 
+///
 /// These tests verify the complete session management system including:
 /// - Session lifecycle management
 /// - Command history tracking
@@ -7,14 +8,14 @@
 /// - Command replay functionality
 /// - Session persistence and cleanup
 /// - Integration with MCP debug command system
-
-use bevy_debugger_mcp::brp_messages::{DebugCommand, DebugResponse, SessionOperation, SessionState};
+use bevy_debugger_mcp::brp_messages::{
+    DebugCommand, DebugResponse, SessionOperation, SessionState,
+};
 use bevy_debugger_mcp::config::Config;
-use bevy_debugger_mcp::brp_client::BrpClient;
 use bevy_debugger_mcp::debug_command_processor::DebugCommandProcessor;
+use bevy_debugger_mcp::error::{Error, Result};
 use bevy_debugger_mcp::session_manager::{SessionManager, SessionManagerConfig};
 use bevy_debugger_mcp::session_processor::SessionProcessor;
-use bevy_debugger_mcp::error::{Error, Result};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -58,10 +59,13 @@ async fn test_session_lifecycle_management() {
     manager.start().await.unwrap();
 
     // Create a new session
-    let session_id = manager.create_session(
-        "Test Session".to_string(),
-        Some("Test session for lifecycle testing".to_string())
-    ).await.unwrap();
+    let session_id = manager
+        .create_session(
+            "Test Session".to_string(),
+            Some("Test session for lifecycle testing".to_string()),
+        )
+        .await
+        .unwrap();
 
     assert!(!session_id.is_empty());
 
@@ -84,7 +88,10 @@ async fn test_command_history_tracking() {
     let manager = create_test_session_manager();
     manager.start().await.unwrap();
 
-    let session_id = manager.create_session("History Test".to_string(), None).await.unwrap();
+    let session_id = manager
+        .create_session("History Test".to_string(), None)
+        .await
+        .unwrap();
 
     // Record multiple commands
     for i in 0..5 {
@@ -94,17 +101,23 @@ async fn test_command_history_tracking() {
             data: None,
         };
 
-        manager.record_command(
-            &session_id,
-            command,
-            Some(response),
-            Duration::from_millis(10 * i as u64),
-            format!("correlation-{}", i),
-        ).await.unwrap();
+        manager
+            .record_command(
+                &session_id,
+                command,
+                Some(response),
+                Duration::from_millis(10 * i as u64),
+                format!("correlation-{}", i),
+            )
+            .await
+            .unwrap();
     }
 
     // Get command history
-    let history = manager.get_command_history(&session_id, Some(10)).await.unwrap();
+    let history = manager
+        .get_command_history(&session_id, Some(10))
+        .await
+        .unwrap();
     assert_eq!(history.len(), 5);
 
     // Verify history is in reverse chronological order (newest first)
@@ -115,7 +128,10 @@ async fn test_command_history_tracking() {
     }
 
     // Test history limit
-    let limited_history = manager.get_command_history(&session_id, Some(3)).await.unwrap();
+    let limited_history = manager
+        .get_command_history(&session_id, Some(3))
+        .await
+        .unwrap();
     assert_eq!(limited_history.len(), 3);
 }
 
@@ -124,20 +140,29 @@ async fn test_checkpoint_creation_and_restoration() {
     let manager = create_test_session_manager();
     manager.start().await.unwrap();
 
-    let session_id = manager.create_session("Checkpoint Test".to_string(), None).await.unwrap();
+    let session_id = manager
+        .create_session("Checkpoint Test".to_string(), None)
+        .await
+        .unwrap();
 
     // Add some commands to create state
     let command = DebugCommand::GetMemoryProfile;
-    manager.record_command(
-        &session_id,
-        command,
-        None,
-        Duration::from_millis(50),
-        "pre-checkpoint".to_string(),
-    ).await.unwrap();
+    manager
+        .record_command(
+            &session_id,
+            command,
+            None,
+            Duration::from_millis(50),
+            "pre-checkpoint".to_string(),
+        )
+        .await
+        .unwrap();
 
     // Create checkpoint
-    let checkpoint_id = manager.create_checkpoint(&session_id, "Test checkpoint").await.unwrap();
+    let checkpoint_id = manager
+        .create_checkpoint(&session_id, "Test checkpoint")
+        .await
+        .unwrap();
     assert!(!checkpoint_id.is_empty());
 
     // Verify session has checkpoint reference
@@ -146,16 +171,22 @@ async fn test_checkpoint_creation_and_restoration() {
 
     // Add more commands after checkpoint
     let post_command = DebugCommand::GetMemoryStatistics;
-    manager.record_command(
-        &session_id,
-        post_command,
-        None,
-        Duration::from_millis(25),
-        "post-checkpoint".to_string(),
-    ).await.unwrap();
+    manager
+        .record_command(
+            &session_id,
+            post_command,
+            None,
+            Duration::from_millis(25),
+            "post-checkpoint".to_string(),
+        )
+        .await
+        .unwrap();
 
     // Restore from checkpoint (this should replace the current session state)
-    manager.restore_checkpoint(&session_id, &checkpoint_id).await.unwrap();
+    manager
+        .restore_checkpoint(&session_id, &checkpoint_id)
+        .await
+        .unwrap();
 
     let restored_session = manager.get_session(&session_id).await.unwrap();
     assert_eq!(restored_session.name, "Checkpoint Test");
@@ -168,7 +199,10 @@ async fn test_command_replay_functionality() {
     let manager = create_test_session_manager();
     manager.start().await.unwrap();
 
-    let session_id = manager.create_session("Replay Test".to_string(), None).await.unwrap();
+    let session_id = manager
+        .create_session("Replay Test".to_string(), None)
+        .await
+        .unwrap();
 
     // Record a sequence of commands
     let commands = vec![
@@ -178,13 +212,16 @@ async fn test_command_replay_functionality() {
     ];
 
     for (i, command) in commands.iter().enumerate() {
-        manager.record_command(
-            &session_id,
-            command.clone(),
-            None,
-            Duration::from_millis(10),
-            format!("replay-cmd-{}", i),
-        ).await.unwrap();
+        manager
+            .record_command(
+                &session_id,
+                command.clone(),
+                None,
+                Duration::from_millis(10),
+                format!("replay-cmd-{}", i),
+            )
+            .await
+            .unwrap();
     }
 
     // Start replay from beginning
@@ -201,9 +238,18 @@ async fn test_command_replay_functionality() {
     }
 
     assert_eq!(replayed_commands.len(), 3);
-    assert!(matches!(replayed_commands[0], DebugCommand::GetMemoryProfile));
-    assert!(matches!(replayed_commands[1], DebugCommand::GetMemoryStatistics));
-    assert!(matches!(replayed_commands[2], DebugCommand::TakeMemorySnapshot));
+    assert!(matches!(
+        replayed_commands[0],
+        DebugCommand::GetMemoryProfile
+    ));
+    assert!(matches!(
+        replayed_commands[1],
+        DebugCommand::GetMemoryStatistics
+    ));
+    assert!(matches!(
+        replayed_commands[2],
+        DebugCommand::TakeMemorySnapshot
+    ));
 
     // Session should be back to active state
     let final_session = manager.get_session(&session_id).await.unwrap();
@@ -222,7 +268,10 @@ async fn test_session_cleanup_functionality() {
     manager.start().await.unwrap();
 
     // Create a session that should be cleaned up
-    let session_id = manager.create_session("Cleanup Test".to_string(), None).await.unwrap();
+    let session_id = manager
+        .create_session("Cleanup Test".to_string(), None)
+        .await
+        .unwrap();
 
     // Verify session exists
     let session = manager.get_session(&session_id).await.unwrap();
@@ -250,7 +299,9 @@ async fn test_session_processor_command_processing() {
 
     let create_result = processor.process(create_cmd).await.unwrap();
     let session_id = match create_result {
-        DebugResponse::SessionStatus { session_id, state, .. } => {
+        DebugResponse::SessionStatus {
+            session_id, state, ..
+        } => {
             assert!(matches!(state, SessionState::Active));
             session_id
         }
@@ -303,7 +354,11 @@ async fn test_session_processor_status_reporting() {
     let status_result = processor.process(status_cmd).await.unwrap();
 
     match status_result {
-        DebugResponse::Status { version, active_sessions, .. } => {
+        DebugResponse::Status {
+            version,
+            active_sessions,
+            ..
+        } => {
             assert_eq!(version, "1.0.0");
             assert!(active_sessions > 0);
         }
@@ -325,7 +380,11 @@ async fn test_session_processor_validation() {
     ];
 
     for cmd in valid_cmds {
-        assert!(processor.validate(&cmd).await.is_ok(), "Command should be valid: {:?}", cmd);
+        assert!(
+            processor.validate(&cmd).await.is_ok(),
+            "Command should be valid: {:?}",
+            cmd
+        );
     }
 
     // Invalid commands - operations requiring session_id without providing it
@@ -345,7 +404,11 @@ async fn test_session_processor_validation() {
     ];
 
     for cmd in invalid_cmds {
-        assert!(processor.validate(&cmd).await.is_err(), "Command should be invalid: {:?}", cmd);
+        assert!(
+            processor.validate(&cmd).await.is_err(),
+            "Command should be invalid: {:?}",
+            cmd
+        );
     }
 }
 
@@ -359,10 +422,9 @@ async fn test_concurrent_session_operations() {
     for i in 0..5 {
         let manager_clone = Arc::clone(&manager);
         let handle = tokio::spawn(async move {
-            manager_clone.create_session(
-                format!("Concurrent Session {}", i),
-                None
-            ).await
+            manager_clone
+                .create_session(format!("Concurrent Session {}", i), None)
+                .await
         });
         handles.push(handle);
     }
@@ -386,13 +448,15 @@ async fn test_concurrent_session_operations() {
         let manager_clone = Arc::clone(&manager);
         let session_id_clone = session_id.clone();
         let handle = tokio::spawn(async move {
-            manager_clone.record_command(
-                &session_id_clone,
-                DebugCommand::GetMemoryProfile,
-                None,
-                Duration::from_millis(10),
-                format!("concurrent-{}", i),
-            ).await
+            manager_clone
+                .record_command(
+                    &session_id_clone,
+                    DebugCommand::GetMemoryProfile,
+                    None,
+                    Duration::from_millis(10),
+                    format!("concurrent-{}", i),
+                )
+                .await
         });
         command_handles.push(handle);
     }
@@ -403,7 +467,10 @@ async fn test_concurrent_session_operations() {
 
     // Verify all sessions have command history
     for session_id in &session_ids {
-        let history = manager.get_command_history(session_id, Some(10)).await.unwrap();
+        let history = manager
+            .get_command_history(session_id, Some(10))
+            .await
+            .unwrap();
         assert_eq!(history.len(), 1);
     }
 }
@@ -414,30 +481,45 @@ async fn test_session_statistics_and_metrics() {
     manager.start().await.unwrap();
 
     // Create multiple sessions with different states
-    let active_session = manager.create_session("Active Session".to_string(), None).await.unwrap();
-    let replay_session = manager.create_session("Replay Session".to_string(), None).await.unwrap();
+    let active_session = manager
+        .create_session("Active Session".to_string(), None)
+        .await
+        .unwrap();
+    let replay_session = manager
+        .create_session("Replay Session".to_string(), None)
+        .await
+        .unwrap();
 
     // Add some commands to sessions
     for i in 0..3 {
-        manager.record_command(
-            &active_session,
-            DebugCommand::GetMemoryProfile,
-            None,
-            Duration::from_millis(10),
-            format!("active-{}", i),
-        ).await.unwrap();
+        manager
+            .record_command(
+                &active_session,
+                DebugCommand::GetMemoryProfile,
+                None,
+                Duration::from_millis(10),
+                format!("active-{}", i),
+            )
+            .await
+            .unwrap();
 
-        manager.record_command(
-            &replay_session,
-            DebugCommand::GetMemoryStatistics,
-            None,
-            Duration::from_millis(15),
-            format!("replay-{}", i),
-        ).await.unwrap();
+        manager
+            .record_command(
+                &replay_session,
+                DebugCommand::GetMemoryStatistics,
+                None,
+                Duration::from_millis(15),
+                format!("replay-{}", i),
+            )
+            .await
+            .unwrap();
     }
 
     // Start replay in one session
-    manager.start_replay(&replay_session, Some(0)).await.unwrap();
+    manager
+        .start_replay(&replay_session, Some(0))
+        .await
+        .unwrap();
 
     // Get statistics
     let stats = manager.get_statistics().await;
@@ -476,22 +558,31 @@ async fn test_session_processor_command_history_integration() {
             data: None,
         };
 
-        processor.record_command_execution(
-            &session_id,
-            cmd.clone(),
-            Some(response),
-            Duration::from_millis(20),
-            format!("integration-test-{}", i),
-        ).await.unwrap();
+        processor
+            .record_command_execution(
+                &session_id,
+                cmd.clone(),
+                Some(response),
+                Duration::from_millis(20),
+                format!("integration-test-{}", i),
+            )
+            .await
+            .unwrap();
     }
 
     // Get command history through processor
-    let history = processor.get_command_history(&session_id, Some(10)).await.unwrap();
+    let history = processor
+        .get_command_history(&session_id, Some(10))
+        .await
+        .unwrap();
     assert_eq!(history.len(), 3);
 
     // Verify history structure
     for (i, entry) in history.iter().enumerate() {
-        assert_eq!(entry["correlation_id"], format!("integration-test-{}", 2 - i)); // Reverse order
+        assert_eq!(
+            entry["correlation_id"],
+            format!("integration-test-{}", 2 - i)
+        ); // Reverse order
         assert_eq!(entry["success"], true);
         assert!(entry["execution_duration_us"].as_u64().unwrap() > 0);
     }
@@ -529,13 +620,15 @@ async fn test_session_error_handling() {
     let result = manager.create_checkpoint(fake_session_id, "test").await;
     assert!(result.is_err());
 
-    let result = manager.record_command(
-        fake_session_id,
-        DebugCommand::GetMemoryProfile,
-        None,
-        Duration::from_millis(10),
-        "test".to_string(),
-    ).await;
+    let result = manager
+        .record_command(
+            fake_session_id,
+            DebugCommand::GetMemoryProfile,
+            None,
+            Duration::from_millis(10),
+            "test".to_string(),
+        )
+        .await;
     assert!(result.is_err());
 }
 
@@ -544,19 +637,29 @@ async fn test_processing_time_estimates() {
     let processor = create_test_session_processor().await;
 
     let test_cases = vec![
-        (DebugCommand::SessionControl {
-            operation: SessionOperation::Create,
-            session_id: Some("test".to_string()),
-        }, Duration::from_millis(50)),
-        (DebugCommand::SessionControl {
-            operation: SessionOperation::Checkpoint,
-            session_id: Some("test".to_string()),
-        }, Duration::from_millis(200)),
+        (
+            DebugCommand::SessionControl {
+                operation: SessionOperation::Create,
+                session_id: Some("test".to_string()),
+            },
+            Duration::from_millis(50),
+        ),
+        (
+            DebugCommand::SessionControl {
+                operation: SessionOperation::Checkpoint,
+                session_id: Some("test".to_string()),
+            },
+            Duration::from_millis(200),
+        ),
         (DebugCommand::GetStatus, Duration::from_millis(10)),
     ];
 
     for (cmd, expected_duration) in test_cases {
         let estimated = processor.estimate_processing_time(&cmd);
-        assert_eq!(estimated, expected_duration, "Processing time estimate mismatch for: {:?}", cmd);
+        assert_eq!(
+            estimated, expected_duration,
+            "Processing time estimate mismatch for: {:?}",
+            cmd
+        );
     }
 }

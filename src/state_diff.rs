@@ -501,7 +501,10 @@ impl StateDiff {
             let new_value = match after.components.get(*component_type) {
                 Some(value) => value,
                 None => {
-                    warn!("Component {:?} found in key set but not in component map", component_type);
+                    warn!(
+                        "Component {:?} found in key set but not in component map",
+                        component_type
+                    );
                     continue;
                 }
             };
@@ -519,7 +522,10 @@ impl StateDiff {
             let old_value = match before.components.get(*component_type) {
                 Some(value) => value,
                 None => {
-                    warn!("Component {:?} found in key set but not in component map", component_type);
+                    warn!(
+                        "Component {:?} found in key set but not in component map",
+                        component_type
+                    );
                     continue;
                 }
             };
@@ -537,14 +543,20 @@ impl StateDiff {
             let before_value = match before.components.get(*component_type) {
                 Some(value) => value,
                 None => {
-                    warn!("Component {:?} found in key set but not in component map", component_type);
+                    warn!(
+                        "Component {:?} found in key set but not in component map",
+                        component_type
+                    );
                     continue;
                 }
             };
             let after_value = match after.components.get(*component_type) {
                 Some(value) => value,
                 None => {
-                    warn!("Component {:?} found in key set but not in component map", component_type);
+                    warn!(
+                        "Component {:?} found in key set but not in component map",
+                        component_type
+                    );
                     continue;
                 }
             };

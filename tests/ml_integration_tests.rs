@@ -23,11 +23,11 @@ use tokio::time::sleep;
 
 use bevy_debugger_mcp::{
     brp_messages::DebugCommand,
-    pattern_learning::PatternLearningSystem,
-    suggestion_engine::{SuggestionEngine, SuggestionContext, SystemState},
-    workflow_automation::{WorkflowAutomation, UserPreferences, AutomationScope},
-    hot_reload::{HotReloadSystem, HotReloadConfig},
     error::Result,
+    hot_reload::{HotReloadConfig, HotReloadSystem},
+    pattern_learning::PatternLearningSystem,
+    suggestion_engine::{SuggestionContext, SuggestionEngine, SystemState},
+    workflow_automation::{AutomationScope, UserPreferences, WorkflowAutomation},
 };
 
 /// Test pattern learning and suggestion generation end-to-end
@@ -47,12 +47,12 @@ async fn test_pattern_learning_to_suggestions_pipeline() -> Result<()> {
             system_name: None,
             include_scheduling: Some(true),
         },
-        DebugCommand::InspectEntity { 
-            entity_id: 123, 
-            include_metadata: Some(true), 
-            include_relationships: Some(false) 
+        DebugCommand::InspectEntity {
+            entity_id: 123,
+            include_metadata: Some(true),
+            include_relationships: Some(false),
         },
-        DebugCommand::ProfileSystem { 
+        DebugCommand::ProfileSystem {
             system_name: "movement_system".to_string(),
             duration_ms: Some(5000),
             track_allocations: Some(false),
@@ -61,11 +61,13 @@ async fn test_pattern_learning_to_suggestions_pipeline() -> Result<()> {
 
     // Record the commands
     for command in &commands {
-        pattern_system.record_command(
-            session_id,
-            command.clone(),
-            Duration::from_millis(50), // Fast execution
-        ).await;
+        pattern_system
+            .record_command(
+                session_id,
+                command.clone(),
+                Duration::from_millis(50), // Fast execution
+            )
+            .await;
     }
 
     // End session with success
@@ -75,15 +77,17 @@ async fn test_pattern_learning_to_suggestions_pipeline() -> Result<()> {
     for i in 0..10 {
         let session_id = format!("test_session_{:03}", i + 2);
         pattern_system.start_session(session_id.clone()).await;
-        
+
         for command in &commands {
-            pattern_system.record_command(
-                &session_id,
-                command.clone(),
-                Duration::from_millis(45 + i * 2), // Slight variation
-            ).await;
+            pattern_system
+                .record_command(
+                    &session_id,
+                    command.clone(),
+                    Duration::from_millis(45 + i * 2), // Slight variation
+                )
+                .await;
         }
-        
+
         pattern_system.end_session(&session_id, true).await?;
     }
 
@@ -106,23 +110,32 @@ async fn test_pattern_learning_to_suggestions_pipeline() -> Result<()> {
 
     // Verify suggestions were generated
     assert!(!suggestions.is_empty(), "Should generate suggestions");
-    
+
     // Verify performance-related suggestions due to low FPS
-    let performance_suggestions: Vec<_> = suggestions.iter()
+    let performance_suggestions: Vec<_> = suggestions
+        .iter()
         .filter(|s| s.reasoning.contains("FPS") || s.command.contains("profile"))
         .collect();
-    assert!(!performance_suggestions.is_empty(), "Should suggest performance debugging");
+    assert!(
+        !performance_suggestions.is_empty(),
+        "Should suggest performance debugging"
+    );
 
     // Test suggestion tracking
     if let Some(suggestion) = suggestions.first() {
         let suggestion_id = format!("{}_{}", suggestion.command, suggestion.confidence);
-        
+
         // Track acceptance
-        suggestion_engine.track_suggestion_acceptance(&suggestion_id, true, true).await;
-        
+        suggestion_engine
+            .track_suggestion_acceptance(&suggestion_id, true, true)
+            .await;
+
         // Get metrics
         let metrics = suggestion_engine.get_suggestion_metrics().await;
-        assert!(metrics.contains_key(&suggestion_id), "Should track suggestion metrics");
+        assert!(
+            metrics.contains_key(&suggestion_id),
+            "Should track suggestion metrics"
+        );
     }
 
     Ok(())
@@ -139,13 +152,19 @@ async fn test_workflow_automation_end_to_end() -> Result<()> {
     ));
 
     // Test automation opportunity analysis
-    let opportunities = workflow_automation.analyze_automation_opportunities().await?;
+    let opportunities = workflow_automation
+        .analyze_automation_opportunities()
+        .await?;
     // Should be empty initially as we have no patterns
-    assert_eq!(opportunities.len(), 0, "Should have no automation opportunities initially");
+    assert_eq!(
+        opportunities.len(),
+        0,
+        "Should have no automation opportunities initially"
+    );
 
     // Simulate building patterns (would normally come from actual usage)
     // This is simplified - in reality, patterns would be built over many sessions
-    
+
     // Test workflow listing
     let workflows = workflow_automation.get_workflows().await;
     assert_eq!(workflows.len(), 0, "Should have no workflows initially");
@@ -159,12 +178,14 @@ async fn test_workflow_automation_end_to_end() -> Result<()> {
     };
 
     // This should return an error since no workflow exists
-    let result = workflow_automation.execute_workflow(
-        "non_existent_workflow",
-        "test_session".to_string(),
-        Some(user_prefs),
-    ).await;
-    
+    let result = workflow_automation
+        .execute_workflow(
+            "non_existent_workflow",
+            "test_session".to_string(),
+            Some(user_prefs),
+        )
+        .await;
+
     assert!(result.is_err(), "Should fail for non-existent workflow");
 
     Ok(())
@@ -173,7 +194,8 @@ async fn test_workflow_automation_end_to_end() -> Result<()> {
 /// Test hot reload system functionality
 #[tokio::test]
 async fn test_hot_reload_system() -> Result<()> {
-    let temp_dir = TempDir::new().map_err(|e| bevy_debugger_mcp::error::Error::Io(e.to_string()))?;
+    let temp_dir =
+        TempDir::new().map_err(|e| bevy_debugger_mcp::error::Error::Io(e.to_string()))?;
     let watch_dir = temp_dir.path().to_path_buf();
 
     let pattern_system = Arc::new(PatternLearningSystem::new());
@@ -211,7 +233,8 @@ async fn test_hot_reload_system() -> Result<()> {
     // Create a test patterns file
     let patterns_file = watch_dir.join("patterns_test.json");
     let test_patterns = r#"[]"#; // Empty patterns array
-    tokio::fs::write(&patterns_file, test_patterns).await
+    tokio::fs::write(&patterns_file, test_patterns)
+        .await
         .map_err(|e| bevy_debugger_mcp::error::Error::Io(e.to_string()))?;
 
     // Give time for file watcher to detect and process
@@ -222,7 +245,10 @@ async fn test_hot_reload_system() -> Result<()> {
 
     // Check if patterns were loaded (should be successful even with empty array)
     let exported_patterns = pattern_system.export_patterns().await?;
-    assert!(exported_patterns.contains("[]"), "Should export empty patterns array");
+    assert!(
+        exported_patterns.contains("[]"),
+        "Should export empty patterns array"
+    );
 
     // Stop hot reload system
     hot_reload.stop().await?;
@@ -241,23 +267,34 @@ async fn test_pattern_learning_integration() -> Result<()> {
 
     // Record various command types
     let commands = vec![
-        (DebugCommand::GetSystemInfo { 
-            system_name: None, 
-            include_scheduling: Some(true) 
-        }, Duration::from_millis(25)),
-        (DebugCommand::InspectEntity { 
-            entity_id: 456, 
-            include_metadata: Some(true), 
-            include_relationships: Some(true) 
-        }, Duration::from_millis(150)),
-        (DebugCommand::ProfileSystem { 
-            system_name: Some("render_system".to_string()),
-            duration: Some(Duration::from_secs(3)),
-        }, Duration::from_millis(3000)),
+        (
+            DebugCommand::GetSystemInfo {
+                system_name: None,
+                include_scheduling: Some(true),
+            },
+            Duration::from_millis(25),
+        ),
+        (
+            DebugCommand::InspectEntity {
+                entity_id: 456,
+                include_metadata: Some(true),
+                include_relationships: Some(true),
+            },
+            Duration::from_millis(150),
+        ),
+        (
+            DebugCommand::ProfileSystem {
+                system_name: Some("render_system".to_string()),
+                duration: Some(Duration::from_secs(3)),
+            },
+            Duration::from_millis(3000),
+        ),
     ];
 
     for (command, duration) in commands {
-        pattern_system.record_command(session_id, command, duration).await;
+        pattern_system
+            .record_command(session_id, command, duration)
+            .await;
     }
 
     // End session successfully
@@ -265,11 +302,11 @@ async fn test_pattern_learning_integration() -> Result<()> {
 
     // Test pattern export/import round trip
     let exported = pattern_system.export_patterns().await?;
-    
+
     // Create new system and import
     let new_pattern_system = Arc::new(PatternLearningSystem::new());
     new_pattern_system.import_patterns(&exported).await?;
-    
+
     // Verify import worked
     let re_exported = new_pattern_system.export_patterns().await?;
     assert_eq!(exported, re_exported, "Export/import should be identical");
@@ -340,16 +377,22 @@ async fn test_suggestion_context_awareness() -> Result<()> {
         };
 
         let suggestions = suggestion_engine.generate_suggestions(&context).await;
-        assert!(!suggestions.is_empty(), "Should generate suggestions for {}", scenario_name);
+        assert!(
+            !suggestions.is_empty(),
+            "Should generate suggestions for {}",
+            scenario_name
+        );
 
         // Check that suggestions are relevant to the scenario
-        let suggestion_text: String = suggestions.iter()
+        let suggestion_text: String = suggestions
+            .iter()
             .map(|s| format!("{} {} {}", s.command, s.reasoning, s.expected_outcome))
             .collect::<Vec<_>>()
             .join(" ")
             .to_lowercase();
 
-        let relevant_suggestions = expected_keywords.iter()
+        let relevant_suggestions = expected_keywords
+            .iter()
             .filter(|keyword| suggestion_text.contains(&keyword.to_lowercase()))
             .count();
 
@@ -383,32 +426,36 @@ async fn test_ml_pipeline_performance() -> Result<()> {
 
         for cmd_idx in 0..commands_per_session {
             let command = match cmd_idx % 4 {
-                0 => DebugCommand::GetSystemInfo { 
-                    system_name: None, 
-                    include_scheduling: Some(true) 
+                0 => DebugCommand::GetSystemInfo {
+                    system_name: None,
+                    include_scheduling: Some(true),
                 },
-                1 => DebugCommand::InspectEntity { 
-                    entity_id: (cmd_idx % 1000) as u32, 
-                    include_metadata: Some(true), 
-                    include_relationships: Some(false) 
+                1 => DebugCommand::InspectEntity {
+                    entity_id: (cmd_idx % 1000) as u32,
+                    include_metadata: Some(true),
+                    include_relationships: Some(false),
                 },
-                2 => DebugCommand::ProfileSystem { 
+                2 => DebugCommand::ProfileSystem {
                     system_name: Some(format!("system_{}", cmd_idx % 10)),
                     duration: Some(Duration::from_secs(1)),
                 },
-                _ => DebugCommand::ValidateQuery { 
-                    query: format!("test_query_{}", cmd_idx) 
+                _ => DebugCommand::ValidateQuery {
+                    query: format!("test_query_{}", cmd_idx),
                 },
             };
 
-            pattern_system.record_command(
-                &session_id,
-                command,
-                Duration::from_millis(10 + (cmd_idx % 100) as u64),
-            ).await;
+            pattern_system
+                .record_command(
+                    &session_id,
+                    command,
+                    Duration::from_millis(10 + (cmd_idx % 100) as u64),
+                )
+                .await;
         }
 
-        pattern_system.end_session(&session_id, session_idx % 5 != 0).await?; // 80% success rate
+        pattern_system
+            .end_session(&session_id, session_idx % 5 != 0)
+            .await?; // 80% success rate
     }
 
     let recording_time = start_time.elapsed();
@@ -421,10 +468,10 @@ async fn test_ml_pipeline_performance() -> Result<()> {
             session_id: format!("perf_suggestion_test_{}", i),
             recent_commands: vec![
                 DebugCommand::GetSystemInfo,
-                DebugCommand::InspectEntity { 
-                    entity_id: i as u32, 
-                    include_metadata: Some(true), 
-                    include_relationships: Some(false) 
+                DebugCommand::InspectEntity {
+                    entity_id: i as u32,
+                    include_metadata: Some(true),
+                    include_relationships: Some(false),
                 },
             ],
             system_state: SystemState {
@@ -474,7 +521,10 @@ async fn test_ml_error_handling() -> Result<()> {
     // Test invalid pattern import
     let invalid_json = r#"{"invalid": "json structure"}"#;
     let result = pattern_system.import_patterns(invalid_json).await;
-    assert!(result.is_err(), "Should fail to import invalid pattern format");
+    assert!(
+        result.is_err(),
+        "Should fail to import invalid pattern format"
+    );
 
     // Test suggestion generation with empty context
     let empty_context = SuggestionContext {
@@ -493,10 +543,15 @@ async fn test_ml_error_handling() -> Result<()> {
     // Should still generate some suggestions (context-aware ones)
     let suggestions = suggestion_engine.generate_suggestions(&empty_context).await;
     // May be empty, but shouldn't crash
-    
+
     // Test session end without start
-    let result = pattern_system.end_session("non_existent_session", true).await;
-    assert!(result.is_ok(), "Should handle ending non-existent session gracefully");
+    let result = pattern_system
+        .end_session("non_existent_session", true)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Should handle ending non-existent session gracefully"
+    );
 
     Ok(())
 }

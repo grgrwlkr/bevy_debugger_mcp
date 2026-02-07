@@ -16,14 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher, EventKind};
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
@@ -87,8 +87,8 @@ pub struct ModelVersion {
 }
 
 mod instant_serde {
-    use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     pub fn serialize<S>(instant: &Instant, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -97,7 +97,8 @@ mod instant_serde {
         // Convert to system time for serialization
         let elapsed = instant.elapsed();
         let system_time = SystemTime::now() - elapsed;
-        let duration_since_epoch = system_time.duration_since(UNIX_EPOCH)
+        let duration_since_epoch = system_time
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_else(|_| Duration::from_secs(0));
         duration_since_epoch.as_secs().serialize(serializer)
     }
@@ -111,7 +112,7 @@ mod instant_serde {
         let system_time = UNIX_EPOCH + Duration::from_secs(secs);
         let now = SystemTime::now();
         let instant_now = Instant::now();
-        
+
         if let Ok(duration) = now.duration_since(system_time) {
             Ok(instant_now - duration)
         } else {
@@ -183,7 +184,7 @@ impl HotReloadSystem {
 
         // Set up file system watcher
         let (tx, mut rx) = mpsc::unbounded_channel::<HotReloadEvent>();
-        
+
         // Store sender for shutdown
         {
             let mut event_tx = self.event_tx.lock().await;
@@ -195,27 +196,28 @@ impl HotReloadSystem {
         let debounce_delay = Duration::from_millis(self.config.debounce_delay_ms);
         let last_reload = self.last_reload.clone();
 
-        let watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-            match res {
-                Ok(event) => {
-                    let tx_clone = tx.clone();
-                    let last_reload_clone = last_reload.clone();
-                    let debounce_delay_clone = debounce_delay;
-                    
-                    tokio::spawn(async move {
-                        if let Err(e) = Self::handle_file_event(
-                            event, 
-                            tx_clone, 
-                            last_reload_clone, 
-                            debounce_delay_clone
-                        ).await {
-                            error!("Error handling file event: {}", e);
-                        }
-                    });
-                }
-                Err(e) => error!("File watcher error: {}", e),
+        let watcher = notify::recommended_watcher(move |res: notify::Result<Event>| match res {
+            Ok(event) => {
+                let tx_clone = tx.clone();
+                let last_reload_clone = last_reload.clone();
+                let debounce_delay_clone = debounce_delay;
+
+                tokio::spawn(async move {
+                    if let Err(e) = Self::handle_file_event(
+                        event,
+                        tx_clone,
+                        last_reload_clone,
+                        debounce_delay_clone,
+                    )
+                    .await
+                    {
+                        error!("Error handling file event: {}", e);
+                    }
+                });
             }
-        }).map_err(|e| Error::Validation(format!("Failed to create file watcher: {}", e)))?;
+            Err(e) => error!("File watcher error: {}", e),
+        })
+        .map_err(|e| Error::Validation(format!("Failed to create file watcher: {}", e)))?;
 
         // Store watcher
         {
@@ -227,8 +229,11 @@ impl HotReloadSystem {
         {
             let mut watcher_lock = self.watcher.lock().await;
             if let Some(ref mut watcher) = *watcher_lock {
-                watcher.watch(&watch_dir, RecursiveMode::Recursive)
-                    .map_err(|e| Error::Validation(format!("Failed to start watching directory: {}", e)))?;
+                watcher
+                    .watch(&watch_dir, RecursiveMode::Recursive)
+                    .map_err(|e| {
+                        Error::Validation(format!("Failed to start watching directory: {}", e))
+                    })?;
             }
         }
 
@@ -281,20 +286,20 @@ impl HotReloadSystem {
             {
                 let mut last_reload_lock = last_reload.write().await;
                 let now = Instant::now();
-                
+
                 if let Some(last_time) = last_reload_lock.get(&path) {
                     if now.duration_since(*last_time) < debounce_delay {
                         debug!("Debouncing reload for: {:?}", path);
                         continue;
                     }
                 }
-                
+
                 last_reload_lock.insert(path.clone(), now);
             }
 
             // Determine event type based on file extension and name
             let reload_event = Self::classify_file_event(&path)?;
-            
+
             if let Some(event) = reload_event {
                 debug!("Detected hot reload event: {:?}", event);
                 if let Err(e) = tx.send(event) {
@@ -308,13 +313,9 @@ impl HotReloadSystem {
 
     /// Classify file events into hot reload events
     fn classify_file_event(path: &Path) -> Result<Option<HotReloadEvent>> {
-        let file_name = path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        let extension = path.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
         let event = match (file_name, extension) {
             // Pattern model files
@@ -322,9 +323,9 @@ impl HotReloadSystem {
                 Some(HotReloadEvent::PatternModelUpdated(path.to_path_buf()))
             }
             // Suggestion template files
-            (name, "json") if name.contains("suggestions") || name.contains("templates") => {
-                Some(HotReloadEvent::SuggestionTemplatesUpdated(path.to_path_buf()))
-            }
+            (name, "json") if name.contains("suggestions") || name.contains("templates") => Some(
+                HotReloadEvent::SuggestionTemplatesUpdated(path.to_path_buf()),
+            ),
             // Workflow definition files
             (name, "json") if name.contains("workflows") => {
                 Some(HotReloadEvent::WorkflowsUpdated(path.to_path_buf()))
@@ -375,7 +376,9 @@ impl HotReloadSystem {
         let content = tokio::fs::read_to_string(path).await?;
 
         // Import patterns (this validates the format)
-        self.pattern_system.import_patterns(&content).await
+        self.pattern_system
+            .import_patterns(&content)
+            .await
             .map_err(|e| Error::Validation(format!("Invalid pattern file format: {}", e)))?;
 
         // Update version tracking
@@ -442,7 +445,7 @@ impl HotReloadSystem {
         };
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        
+
         match event {
             HotReloadEvent::PatternModelUpdated(_) => {
                 let backup_path = backup_dir.join(format!("patterns_backup_{}.json", timestamp));
@@ -504,9 +507,13 @@ impl HotReloadSystem {
         let mut hasher = Sha256::new();
         hasher.update(&content);
         let checksum = format!("{:x}", hasher.finalize());
-        
+
         let version = ModelVersion {
-            version: format!("{}_{}", chrono::Utc::now().format("%Y%m%d_%H%M%S"), &checksum[..8]),
+            version: format!(
+                "{}_{}",
+                chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+                &checksum[..8]
+            ),
             updated_at: Instant::now(),
             checksum,
             file_path: path.to_path_buf(),
@@ -530,7 +537,7 @@ impl HotReloadSystem {
 
         // Scan watch directory for model files
         let mut entries = tokio::fs::read_dir(&self.config.watch_directory).await?;
-        
+
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.is_file() {
@@ -576,11 +583,17 @@ mod tests {
     async fn test_file_classification() {
         let patterns_path = Path::new("./models/patterns_v1.json");
         let event = HotReloadSystem::classify_file_event(patterns_path).unwrap();
-        assert!(matches!(event, Some(HotReloadEvent::PatternModelUpdated(_))));
+        assert!(matches!(
+            event,
+            Some(HotReloadEvent::PatternModelUpdated(_))
+        ));
 
         let suggestions_path = Path::new("./models/suggestion_templates.json");
         let event = HotReloadSystem::classify_file_event(suggestions_path).unwrap();
-        assert!(matches!(event, Some(HotReloadEvent::SuggestionTemplatesUpdated(_))));
+        assert!(matches!(
+            event,
+            Some(HotReloadEvent::SuggestionTemplatesUpdated(_))
+        ));
 
         let workflows_path = Path::new("./models/workflows.json");
         let event = HotReloadSystem::classify_file_event(workflows_path).unwrap();
@@ -608,7 +621,10 @@ mod tests {
 
         let pattern_system = Arc::new(PatternLearningSystem::new());
         let suggestion_engine = Arc::new(SuggestionEngine::new(pattern_system.clone()));
-        let workflow_automation = Arc::new(WorkflowAutomation::new(pattern_system.clone(), suggestion_engine.clone()));
+        let workflow_automation = Arc::new(WorkflowAutomation::new(
+            pattern_system.clone(),
+            suggestion_engine.clone(),
+        ));
 
         let config = HotReloadConfig {
             backup_directory: Some(backup_dir.to_path_buf()),
@@ -616,7 +632,12 @@ mod tests {
             ..Default::default()
         };
 
-        let hot_reload = HotReloadSystem::new(config, pattern_system, suggestion_engine, workflow_automation);
+        let hot_reload = HotReloadSystem::new(
+            config,
+            pattern_system,
+            suggestion_engine,
+            workflow_automation,
+        );
         hot_reload.cleanup_old_backups(backup_dir).await.unwrap();
 
         // Count remaining files

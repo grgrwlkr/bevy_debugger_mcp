@@ -1,13 +1,9 @@
 /// Simplified Integration Test for BEVDBG-011 Acceptance Criteria
-/// 
+///
 /// This test validates core functionality without the complex harness
 /// to ensure basic integration works reliably.
-
 use bevy_debugger_mcp::{
-    mcp_server::McpServer,
-    brp_client::BrpClient,
-    config::Config,
-    error::Result,
+    brp_client::BrpClient, config::Config, error::Result, mcp_server::McpServer,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -24,7 +20,7 @@ async fn create_test_server() -> Result<McpServer> {
 
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let server = McpServer::new(config, brp_client);
-    
+
     Ok(server)
 }
 
@@ -32,7 +28,7 @@ async fn create_test_server() -> Result<McpServer> {
 #[tokio::test]
 async fn test_all_mcp_tools_callable() {
     let server = create_test_server().await.unwrap();
-    
+
     // Primary MCP tools to test
     let tools = vec![
         ("observe", json!({"query": "entity count"})),
@@ -47,11 +43,12 @@ async fn test_all_mcp_tools_callable() {
 
     for (tool_name, args) in tools {
         println!("Testing tool: {}", tool_name);
-        
+
         let result = timeout(
             Duration::from_secs(5),
-            server.handle_tool_call(tool_name, args)
-        ).await;
+            server.handle_tool_call(tool_name, args),
+        )
+        .await;
 
         match result {
             Ok(Ok(_)) => {
@@ -70,18 +67,23 @@ async fn test_all_mcp_tools_callable() {
 
     // All tools should be callable (even if they fail gracefully)
     // This tests that the MCP protocol integration works
-    assert_eq!(successful_calls + (total_calls - successful_calls), total_calls,
-               "All tools should be callable without crashing");
-    
-    println!("Integration test completed: {}/{} tools called successfully", 
-             successful_calls, total_calls);
+    assert_eq!(
+        successful_calls + (total_calls - successful_calls),
+        total_calls,
+        "All tools should be callable without crashing"
+    );
+
+    println!(
+        "Integration test completed: {}/{} tools called successfully",
+        successful_calls, total_calls
+    );
 }
 
 /// Test performance monitoring doesn't crash
 #[tokio::test]
 async fn test_performance_monitoring_integration() {
     let server = create_test_server().await.unwrap();
-    
+
     // Test performance-related tools
     let performance_tools = vec![
         ("resource_metrics", json!({})),
@@ -92,8 +94,9 @@ async fn test_performance_monitoring_integration() {
     for (tool_name, args) in performance_tools {
         let result = timeout(
             Duration::from_secs(3),
-            server.handle_tool_call(tool_name, args)
-        ).await;
+            server.handle_tool_call(tool_name, args),
+        )
+        .await;
 
         // Should not timeout or panic
         match result {
@@ -101,7 +104,7 @@ async fn test_performance_monitoring_integration() {
             Err(_) => panic!("Performance tool {} timed out", tool_name),
         }
     }
-    
+
     println!("Performance monitoring integration test passed");
 }
 
@@ -109,35 +112,46 @@ async fn test_performance_monitoring_integration() {
 #[tokio::test]
 async fn test_error_handling_integration() {
     let server = create_test_server().await.unwrap();
-    
+
     // Test error scenarios
     let error_scenarios = vec![
-        ("invalid_tool", json!({}), true),  // Should error
-        ("observe", json!("malformed_args"), false),  // May succeed (gets converted to string)
-        ("screenshot", json!({"path": "/invalid/path/test.png"}), false),  // May succeed but fail internally
+        ("invalid_tool", json!({}), true),           // Should error
+        ("observe", json!("malformed_args"), false), // May succeed (gets converted to string)
+        (
+            "screenshot",
+            json!({"path": "/invalid/path/test.png"}),
+            false,
+        ), // May succeed but fail internally
     ];
 
     for (tool_name, args, should_error) in error_scenarios {
         let result = server.handle_tool_call(tool_name, args).await;
-        
+
         if should_error {
             // Should return error, not panic
-            assert!(result.is_err(), "Tool '{}' should return error for invalid input", tool_name);
+            assert!(
+                result.is_err(),
+                "Tool '{}' should return error for invalid input",
+                tool_name
+            );
             println!("✓ Error handling works for {} (expected error)", tool_name);
         } else {
             // Should not panic (may succeed or fail gracefully)
-            println!("✓ Error handling works for {} (graceful handling)", tool_name);
+            println!(
+                "✓ Error handling works for {} (graceful handling)",
+                tool_name
+            );
         }
     }
-    
+
     println!("Error handling integration test passed");
 }
 
 /// Test that debug commands can be processed
-#[tokio::test] 
+#[tokio::test]
 async fn test_debug_command_integration() {
     let server = create_test_server().await.unwrap();
-    
+
     // Test debug command processing
     let debug_commands = vec![
         json!({"command": {"GetBudgetStatistics": {}}}),
@@ -147,8 +161,9 @@ async fn test_debug_command_integration() {
     for cmd in debug_commands {
         let result = timeout(
             Duration::from_secs(2),
-            server.handle_tool_call("debug", cmd)
-        ).await;
+            server.handle_tool_call("debug", cmd),
+        )
+        .await;
 
         // Should not timeout (may fail due to no BRP connection)
         match result {
@@ -156,7 +171,7 @@ async fn test_debug_command_integration() {
             Err(_) => panic!("Debug command processing timed out"),
         }
     }
-    
+
     println!("Debug command integration test passed");
 }
 
@@ -164,24 +179,24 @@ async fn test_debug_command_integration() {
 #[tokio::test]
 async fn test_concurrent_integration() {
     let server = Arc::new(create_test_server().await.unwrap());
-    
+
     let mut handles = vec![];
-    
+
     // Execute multiple calls concurrently
     for i in 0..3 {
         let server_clone = Arc::clone(&server);
         let handle = tokio::spawn(async move {
             let tool = match i % 3 {
                 0 => ("health_check", json!({})),
-                1 => ("resource_metrics", json!({})), 
+                1 => ("resource_metrics", json!({})),
                 _ => ("diagnostic_report", json!({"action": "generate"})),
             };
-            
+
             server_clone.handle_tool_call(tool.0, tool.1).await
         });
         handles.push(handle);
     }
-    
+
     // Wait for all to complete
     let mut completed = 0;
     for handle in handles {
@@ -189,40 +204,52 @@ async fn test_concurrent_integration() {
             completed += 1;
         }
     }
-    
+
     assert_eq!(completed, 3, "All concurrent calls should complete");
-    println!("Concurrent integration test passed: {}/3 completed", completed);
+    println!(
+        "Concurrent integration test passed: {}/3 completed",
+        completed
+    );
 }
 
 /// Test system remains responsive after multiple operations
 #[tokio::test]
 async fn test_system_resilience() {
     let server = create_test_server().await.unwrap();
-    
+
     // Execute many operations to test resilience
     for i in 0..10 {
-        let tool = if i % 2 == 0 { 
+        let tool = if i % 2 == 0 {
             ("health_check", json!({}))
         } else {
             ("resource_metrics", json!({}))
         };
-        
+
         let result = timeout(
             Duration::from_millis(500),
-            server.handle_tool_call(tool.0, tool.1)
-        ).await;
-        
+            server.handle_tool_call(tool.0, tool.1),
+        )
+        .await;
+
         // System should remain responsive
-        assert!(result.is_ok(), "System should remain responsive after {} operations", i);
+        assert!(
+            result.is_ok(),
+            "System should remain responsive after {} operations",
+            i
+        );
     }
-    
+
     // Final health check
     let final_check = timeout(
         Duration::from_secs(1),
-        server.handle_tool_call("health_check", json!({}))
-    ).await;
-    
-    assert!(final_check.is_ok(), "System should be responsive after stress test");
+        server.handle_tool_call("health_check", json!({})),
+    )
+    .await;
+
+    assert!(
+        final_check.is_ok(),
+        "System should be responsive after stress test"
+    );
     println!("System resilience test passed");
 }
 
@@ -230,54 +257,73 @@ async fn test_system_resilience() {
 #[tokio::test]
 async fn test_bevdbg_011_acceptance_criteria() {
     println!("Validating BEVDBG-011 Acceptance Criteria...");
-    
+
     let server = create_test_server().await.unwrap();
-    
+
     // Criterion 1: All MCP commands have integration tests
     let mcp_commands = vec![
-        "observe", "experiment", "screenshot", "hypothesis", 
-        "stress", "replay", "anomaly", "orchestrate", 
-        "resource_metrics", "health_check", "diagnostic_report"
+        "observe",
+        "experiment",
+        "screenshot",
+        "hypothesis",
+        "stress",
+        "replay",
+        "anomaly",
+        "orchestrate",
+        "resource_metrics",
+        "health_check",
+        "diagnostic_report",
     ];
-    
+
     let mut tested_commands = 0;
     for cmd in &mcp_commands {
         let result = timeout(
             Duration::from_secs(2),
-            server.handle_tool_call(cmd, json!({"test": true}))
-        ).await;
-        
+            server.handle_tool_call(cmd, json!({"test": true})),
+        )
+        .await;
+
         if result.is_ok() {
             tested_commands += 1;
         }
     }
-    
+
     let command_coverage = tested_commands as f32 / mcp_commands.len() as f32;
-    println!("✓ Command coverage: {:.1}% ({}/{})", 
-             command_coverage * 100.0, tested_commands, mcp_commands.len());
-    
-    // Criterion 2: Performance regression tests prevent degradation  
+    println!(
+        "✓ Command coverage: {:.1}% ({}/{})",
+        command_coverage * 100.0,
+        tested_commands,
+        mcp_commands.len()
+    );
+
+    // Criterion 2: Performance regression tests prevent degradation
     let performance_start = std::time::Instant::now();
     let _health_check = server.handle_tool_call("health_check", json!({})).await;
     let performance_duration = performance_start.elapsed();
-    
-    assert!(performance_duration < Duration::from_millis(200), 
-            "Performance regression detected: health_check took {:?}", performance_duration);
-    println!("✓ Performance regression tests: health_check completed in {:?}", performance_duration);
-    
+
+    assert!(
+        performance_duration < Duration::from_millis(200),
+        "Performance regression detected: health_check took {:?}",
+        performance_duration
+    );
+    println!(
+        "✓ Performance regression tests: health_check completed in {:?}",
+        performance_duration
+    );
+
     // Criterion 3: Documentation covers all debug commands
     let docs_exist = std::path::Path::new("docs/api/README.md").exists()
         && std::path::Path::new("docs/tutorials/README.md").exists()
         && std::path::Path::new("docs/troubleshooting/README.md").exists();
-    
+
     assert!(docs_exist, "Documentation files should exist");
     println!("✓ Documentation coverage: API, tutorials, and troubleshooting guides exist");
-    
+
     // Criterion 4: Error recovery and resilience
     let _error_test = server.handle_tool_call("invalid_tool", json!({})).await;
     let _recovery_test = server.handle_tool_call("health_check", json!({})).await;
     // Should not crash and should remain functional
     println!("✓ Error recovery: system remains functional after errors");
-    
+
     println!("🎉 BEVDBG-011 Acceptance Criteria Validation PASSED!");
 }

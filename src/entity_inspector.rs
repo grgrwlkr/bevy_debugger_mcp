@@ -1,10 +1,10 @@
+use crate::brp_client::BrpClient;
 /// Entity inspection system for detailed debugging and analysis
 use crate::brp_messages::{
-    BrpRequest, BrpResponse, BrpResult, EntityData, EntityId, EntityMetadata, 
-    EntityRelationships, EntityInspectionResult, DetailedComponentTypeInfo, 
-    EntityLocationInfo, DebugResponse, ComponentValue,
+    BrpRequest, BrpResponse, BrpResult, ComponentValue, DebugResponse, DetailedComponentTypeInfo,
+    EntityData, EntityId, EntityInspectionResult, EntityLocationInfo, EntityMetadata,
+    EntityRelationships,
 };
-use crate::brp_client::BrpClient;
 use crate::error::{Error, Result};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -62,8 +62,10 @@ impl EntityInspector {
         include_metadata: bool,
         include_relationships: bool,
     ) -> Result<DebugResponse> {
-        debug!("Inspecting entity {} (metadata: {}, relationships: {})", 
-               entity_id, include_metadata, include_relationships);
+        debug!(
+            "Inspecting entity {} (metadata: {}, relationships: {})",
+            entity_id, include_metadata, include_relationships
+        );
 
         let start_time = Instant::now();
 
@@ -73,8 +75,16 @@ impl EntityInspector {
                 debug!("Using cached data for entity {}", entity_id);
                 return Ok(DebugResponse::EntityInspection {
                     entity: cached.entity,
-                    metadata: if include_metadata { Some(cached.metadata) } else { None },
-                    relationships: if include_relationships { cached.relationships } else { None },
+                    metadata: if include_metadata {
+                        Some(cached.metadata)
+                    } else {
+                        None
+                    },
+                    relationships: if include_relationships {
+                        cached.relationships
+                    } else {
+                        None
+                    },
                 });
             }
         }
@@ -84,7 +94,10 @@ impl EntityInspector {
             Ok(data) => data,
             Err(e) => {
                 warn!("Failed to fetch entity {}: {}", entity_id, e);
-                return Err(Error::DebugError(format!("Entity {} not found or inaccessible: {}", entity_id, e)));
+                return Err(Error::DebugError(format!(
+                    "Entity {} not found or inaccessible: {}",
+                    entity_id, e
+                )));
             }
         };
 
@@ -95,18 +108,30 @@ impl EntityInspector {
         };
 
         let relationships = if include_relationships {
-            self.build_entity_relationships(&entity_data, entity_id).await.ok()
+            self.build_entity_relationships(&entity_data, entity_id)
+                .await
+                .ok()
         } else {
             None
         };
 
         // Cache the result
-        self.cache_entity(entity_id, &entity_data, metadata.as_ref(), relationships.as_ref()).await;
+        self.cache_entity(
+            entity_id,
+            &entity_data,
+            metadata.as_ref(),
+            relationships.as_ref(),
+        )
+        .await;
 
         // Update change tracking
         self.update_change_tracking(entity_id, &entity_data).await;
 
-        debug!("Entity {} inspection completed in {:?}", entity_id, start_time.elapsed());
+        debug!(
+            "Entity {} inspection completed in {:?}",
+            entity_id,
+            start_time.elapsed()
+        );
 
         Ok(DebugResponse::EntityInspection {
             entity: entity_data,
@@ -124,11 +149,12 @@ impl EntityInspector {
         limit: Option<usize>,
     ) -> Result<DebugResponse> {
         let start_time = Instant::now();
-        
+
         // Apply limit (default to MAX_BATCH_SIZE)
         let actual_limit = limit.unwrap_or(MAX_BATCH_SIZE).min(MAX_BATCH_SIZE);
-        let entities_to_inspect: Vec<EntityId> = entity_ids.into_iter().take(actual_limit).collect();
-        
+        let entities_to_inspect: Vec<EntityId> =
+            entity_ids.into_iter().take(actual_limit).collect();
+
         debug!("Batch inspecting {} entities", entities_to_inspect.len());
 
         let mut results = Vec::with_capacity(entities_to_inspect.len());
@@ -139,11 +165,17 @@ impl EntityInspector {
         let chunk_size = 10; // Process 10 entities at a time
         for chunk in entities_to_inspect.chunks(chunk_size) {
             let mut chunk_futures = Vec::new();
-            
+
             for &entity_id in chunk {
                 let inspector = self.clone();
                 let future = async move {
-                    inspector.inspect_single_for_batch(entity_id, include_metadata, include_relationships).await
+                    inspector
+                        .inspect_single_for_batch(
+                            entity_id,
+                            include_metadata,
+                            include_relationships,
+                        )
+                        .await
                 };
                 chunk_futures.push((entity_id, future));
             }
@@ -171,8 +203,11 @@ impl EntityInspector {
         }
 
         let inspection_time = start_time.elapsed();
-        debug!("Batch inspection of {} entities completed in {:?}", 
-               entities_to_inspect.len(), inspection_time);
+        debug!(
+            "Batch inspection of {} entities completed in {:?}",
+            entities_to_inspect.len(),
+            inspection_time
+        );
 
         Ok(DebugResponse::BatchEntityInspection {
             entities: results,
@@ -194,13 +229,17 @@ impl EntityInspector {
         let entity_data = self.fetch_entity_from_brp(entity_id).await?;
 
         let metadata = if include_metadata {
-            self.build_entity_metadata(&entity_data, entity_id).await.ok()
+            self.build_entity_metadata(&entity_data, entity_id)
+                .await
+                .ok()
         } else {
             None
         };
 
         let relationships = if include_relationships {
-            self.build_entity_relationships(&entity_data, entity_id).await.ok()
+            self.build_entity_relationships(&entity_data, entity_id)
+                .await
+                .ok()
         } else {
             None
         };
@@ -218,7 +257,7 @@ impl EntityInspector {
     /// Fetch entity data from Bevy via BRP client
     async fn fetch_entity_from_brp(&self, entity_id: EntityId) -> Result<EntityData> {
         let mut brp_client = self.brp_client.write().await;
-        
+
         // Use BRP Get command to fetch entity with all components
         let request = BrpRequest::Get {
             entity: entity_id,
@@ -238,12 +277,18 @@ impl EntityInspector {
             BrpResponse::Error(err) => {
                 Err(Error::DebugError(format!("BRP error: {}", err.message)))
             }
-            _ => Err(Error::DebugError("Unexpected BRP response type".to_string())),
+            _ => Err(Error::DebugError(
+                "Unexpected BRP response type".to_string(),
+            )),
         }
     }
 
     /// Build comprehensive entity metadata
-    async fn build_entity_metadata(&self, entity_data: &EntityData, entity_id: EntityId) -> Result<EntityMetadata> {
+    async fn build_entity_metadata(
+        &self,
+        entity_data: &EntityData,
+        entity_id: EntityId,
+    ) -> Result<EntityMetadata> {
         let component_count = entity_data.components.len();
         let mut total_memory_size = 0usize;
         let mut component_types = Vec::new();
@@ -264,7 +309,9 @@ impl EntityInspector {
                 type_name: self.get_friendly_type_name(component_type),
                 size_bytes: size_estimate,
                 is_reflected: self.has_reflection_data(component_type),
-                schema: self.get_component_schema(component_type, component_value).await,
+                schema: self
+                    .get_component_schema(component_type, component_value)
+                    .await,
                 is_modified,
             });
         }
@@ -288,21 +335,32 @@ impl EntityInspector {
     }
 
     /// Build entity relationship information
-    async fn build_entity_relationships(&self, entity_data: &EntityData, _entity_id: EntityId) -> Result<EntityRelationships> {
+    async fn build_entity_relationships(
+        &self,
+        entity_data: &EntityData,
+        _entity_id: EntityId,
+    ) -> Result<EntityRelationships> {
         let mut parent = None;
         let mut children = Vec::new();
         let mut related = HashMap::new();
 
         // Look for Parent component
-        if let Some(parent_value) = entity_data.components.get("bevy_hierarchy::components::parent::Parent") {
+        if let Some(parent_value) = entity_data
+            .components
+            .get("bevy_hierarchy::components::parent::Parent")
+        {
             if let Ok(parent_id) = self.extract_entity_id_from_component(parent_value) {
                 parent = Some(parent_id);
             }
         }
 
         // Look for Children component
-        if let Some(children_value) = entity_data.components.get("bevy_hierarchy::components::children::Children") {
-            children = self.extract_entity_ids_from_component(children_value)
+        if let Some(children_value) = entity_data
+            .components
+            .get("bevy_hierarchy::components::children::Children")
+        {
+            children = self
+                .extract_entity_ids_from_component(children_value)
                 .unwrap_or_default();
         }
 
@@ -327,7 +385,10 @@ impl EntityInspector {
     /// Check if entity is in cache and not expired
     async fn get_cached_entity(&self, entity_id: EntityId) -> Option<CachedEntityData> {
         let cache = self.entity_cache.read().await;
-        cache.get(&entity_id).cloned().filter(|cached| !cached.ttl_expired())
+        cache
+            .get(&entity_id)
+            .cloned()
+            .filter(|cached| !cached.ttl_expired())
     }
 
     /// Cache entity data
@@ -377,7 +438,10 @@ impl EntityInspector {
         tracker.current_frame += 1;
         let current_frame = tracker.current_frame;
 
-        let entity_mods = tracker.modifications.entry(entity_id).or_insert_with(HashMap::new);
+        let entity_mods = tracker
+            .modifications
+            .entry(entity_id)
+            .or_insert_with(HashMap::new);
         for component_type in entity_data.components.keys() {
             entity_mods.insert(component_type.clone(), current_frame);
         }
@@ -398,24 +462,34 @@ impl EntityInspector {
     fn estimate_component_size(&self, component_value: &ComponentValue) -> usize {
         self.estimate_component_size_with_depth(component_value, 0)
     }
-    
+
     /// Estimate component memory size with depth limit to prevent stack overflow
-    fn estimate_component_size_with_depth(&self, component_value: &ComponentValue, depth: usize) -> usize {
+    fn estimate_component_size_with_depth(
+        &self,
+        component_value: &ComponentValue,
+        depth: usize,
+    ) -> usize {
         const MAX_DEPTH: usize = 32; // Prevent infinite recursion
         if depth > MAX_DEPTH {
             return 1024; // Default size for deeply nested structures
         }
-        
+
         match component_value {
             Value::Null => 0,
             Value::Bool(_) => 1,
-            Value::Number(_) => 8, // Assume f64
+            Value::Number(_) => 8,            // Assume f64
             Value::String(s) => s.len() + 24, // String overhead
             Value::Array(arr) => {
-                arr.iter().map(|v| self.estimate_component_size_with_depth(v, depth + 1)).sum::<usize>() + 24
+                arr.iter()
+                    .map(|v| self.estimate_component_size_with_depth(v, depth + 1))
+                    .sum::<usize>()
+                    + 24
             }
             Value::Object(obj) => {
-                obj.values().map(|v| self.estimate_component_size_with_depth(v, depth + 1)).sum::<usize>() + obj.len() * 32
+                obj.values()
+                    .map(|v| self.estimate_component_size_with_depth(v, depth + 1))
+                    .sum::<usize>()
+                    + obj.len() * 32
             }
         }
     }
@@ -433,18 +507,23 @@ impl EntityInspector {
     /// Check if component has reflection data
     fn has_reflection_data(&self, component_type: &str) -> bool {
         // Common Bevy components that have reflection
-        matches!(component_type,
-            "bevy_transform::components::transform::Transform" |
-            "bevy_transform::components::global_transform::GlobalTransform" |
-            "bevy_core::name::Name" |
-            "bevy_render::view::visibility::Visibility" |
-            "bevy_hierarchy::components::parent::Parent" |
-            "bevy_hierarchy::components::children::Children"
+        matches!(
+            component_type,
+            "bevy_transform::components::transform::Transform"
+                | "bevy_transform::components::global_transform::GlobalTransform"
+                | "bevy_core::name::Name"
+                | "bevy_render::view::visibility::Visibility"
+                | "bevy_hierarchy::components::parent::Parent"
+                | "bevy_hierarchy::components::children::Children"
         )
     }
 
     /// Get component schema if available
-    async fn get_component_schema(&self, component_type: &str, _component_value: &ComponentValue) -> Option<Value> {
+    async fn get_component_schema(
+        &self,
+        component_type: &str,
+        _component_value: &ComponentValue,
+    ) -> Option<Value> {
         // Return basic schemas for known types
         match component_type {
             "bevy_transform::components::transform::Transform" => Some(json!({
@@ -489,13 +568,18 @@ impl EntityInspector {
     }
 
     /// Extract entity ID from component value
-    fn extract_entity_id_from_component(&self, component_value: &ComponentValue) -> Result<EntityId> {
+    fn extract_entity_id_from_component(
+        &self,
+        component_value: &ComponentValue,
+    ) -> Result<EntityId> {
         match component_value {
             Value::Number(n) => {
                 if let Some(id) = n.as_u64() {
                     Ok(id)
                 } else {
-                    Err(Error::DebugError("Invalid entity ID in component".to_string()))
+                    Err(Error::DebugError(
+                        "Invalid entity ID in component".to_string(),
+                    ))
                 }
             }
             Value::Object(obj) => {
@@ -507,14 +591,21 @@ impl EntityInspector {
                         }
                     }
                 }
-                Err(Error::DebugError("No entity ID found in component".to_string()))
+                Err(Error::DebugError(
+                    "No entity ID found in component".to_string(),
+                ))
             }
-            _ => Err(Error::DebugError("Invalid component format for entity ID".to_string())),
+            _ => Err(Error::DebugError(
+                "Invalid component format for entity ID".to_string(),
+            )),
         }
     }
 
     /// Extract entity IDs from component value (for collections)
-    fn extract_entity_ids_from_component(&self, component_value: &ComponentValue) -> Result<Vec<EntityId>> {
+    fn extract_entity_ids_from_component(
+        &self,
+        component_value: &ComponentValue,
+    ) -> Result<Vec<EntityId>> {
         match component_value {
             Value::Array(arr) => {
                 let mut entity_ids = Vec::new();
@@ -535,11 +626,11 @@ impl EntityInspector {
 
     /// Check if component type represents a relationship
     fn is_relationship_component(&self, component_type: &str) -> bool {
-        component_type.contains("parent") ||
-        component_type.contains("child") ||
-        component_type.contains("Parent") ||
-        component_type.contains("Children") ||
-        component_type.contains("Relation")
+        component_type.contains("parent")
+            || component_type.contains("child")
+            || component_type.contains("Parent")
+            || component_type.contains("Children")
+            || component_type.contains("Relation")
     }
 
     /// Clear entity from cache (useful when entity is despawned)
@@ -552,9 +643,7 @@ impl EntityInspector {
     pub async fn get_cache_stats(&self) -> (usize, usize) {
         let cache = self.entity_cache.read().await;
         let total_entries = cache.len();
-        let expired_entries = cache.values()
-            .filter(|cached| cached.ttl_expired())
-            .count();
+        let expired_entries = cache.values().filter(|cached| cached.ttl_expired()).count();
         (total_entries, expired_entries)
     }
 }
@@ -593,7 +682,10 @@ mod tests {
         // Test different component value sizes
         assert_eq!(inspector.estimate_component_size(&Value::Null), 0);
         assert_eq!(inspector.estimate_component_size(&Value::Bool(true)), 1);
-        assert_eq!(inspector.estimate_component_size(&Value::Number(serde_json::Number::from(42))), 8);
+        assert_eq!(
+            inspector.estimate_component_size(&Value::Number(serde_json::Number::from(42))),
+            8
+        );
         assert!(inspector.estimate_component_size(&Value::String("test".to_string())) >= 4);
     }
 

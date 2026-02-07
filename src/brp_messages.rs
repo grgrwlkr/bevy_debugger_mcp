@@ -21,12 +21,12 @@ impl EntityWithGeneration {
     pub fn new(index: u32, generation: u32) -> Self {
         Self { index, generation }
     }
-    
+
     /// Convert to combined u64 entity ID for backward compatibility
     pub fn to_entity_id(self) -> EntityId {
         ((self.generation as u64) << 32) | (self.index as u64)
     }
-    
+
     /// Extract entity with generation from u64 entity ID
     pub fn from_entity_id(entity_id: EntityId) -> Self {
         Self {
@@ -552,20 +552,20 @@ pub enum DebugResponse {
 
     /// System profiling result
     SystemProfile(SystemProfile),
-    
+
     /// Profiling started response
     ProfilingStarted {
         system_name: String,
         duration_ms: Option<u64>,
     },
-    
+
     /// Profiling history response
     ProfileHistory {
         system_name: String,
         samples: Vec<ProfileSample>,
         frame_count: usize,
     },
-    
+
     /// Performance anomalies response
     PerformanceAnomalies {
         count: usize,
@@ -1086,11 +1086,9 @@ pub mod validation {
     /// Validate BRP request
     pub fn validate_request(request: &BrpRequest) -> Result<(), String> {
         match request {
-            BrpRequest::Get { entity, .. } 
+            BrpRequest::Get { entity, .. }
             | BrpRequest::Destroy { entity }
-            | BrpRequest::Reparent { entity, .. } => {
-                validate_entity_id(*entity)
-            }
+            | BrpRequest::Reparent { entity, .. } => validate_entity_id(*entity),
             BrpRequest::Set { entity, components } => {
                 validate_entity_id(*entity)?;
                 for type_id in components.keys() {
@@ -1181,7 +1179,11 @@ mod tests {
         let deserialized: BrpRequest = serde_json::from_str(&json).unwrap();
 
         match deserialized {
-            BrpRequest::Query { filter, limit, strict } => {
+            BrpRequest::Query {
+                filter,
+                limit,
+                strict,
+            } => {
                 assert_eq!(limit, Some(10));
                 assert_eq!(strict, Some(true));
                 assert!(filter.is_some());

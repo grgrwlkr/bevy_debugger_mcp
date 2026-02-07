@@ -125,33 +125,33 @@ impl SuggestionEngine {
             suggestion_history: Arc::new(RwLock::new(HashMap::new())),
             templates: Arc::new(RwLock::new(Vec::new())),
         };
-        
+
         // Initialize with default templates
         let templates_clone = engine.templates.clone();
         tokio::spawn(async move {
             let mut templates = templates_clone.write().await;
             templates.extend(Self::create_default_templates());
         });
-        
+
         engine
     }
-    
+
     /// Generate suggestions based on context
     pub async fn generate_suggestions(&self, context: &SuggestionContext) -> Vec<DebugSuggestion> {
         let mut suggestions = Vec::new();
-        
+
         // 1. Pattern-based suggestions
         let pattern_suggestions = self.generate_pattern_suggestions(context).await;
         suggestions.extend(pattern_suggestions);
-        
+
         // 2. Template-based suggestions
         let template_suggestions = self.generate_template_suggestions(context).await;
         suggestions.extend(template_suggestions);
-        
+
         // 3. Context-aware suggestions
         let context_suggestions = self.generate_context_suggestions(context).await;
         suggestions.extend(context_suggestions);
-        
+
         // Sort by priority and confidence
         suggestions.sort_by(|a, b| {
             let priority_cmp = b.priority.cmp(&a.priority);
@@ -161,7 +161,7 @@ impl SuggestionEngine {
                 priority_cmp
             }
         });
-        
+
         // Limit and filter by confidence
         suggestions
             .into_iter()
@@ -169,35 +169,44 @@ impl SuggestionEngine {
             .take(MAX_SUGGESTIONS)
             .collect()
     }
-    
+
     /// Generate suggestions based on learned patterns
-    async fn generate_pattern_suggestions(&self, context: &SuggestionContext) -> Vec<DebugSuggestion> {
+    async fn generate_pattern_suggestions(
+        &self,
+        context: &SuggestionContext,
+    ) -> Vec<DebugSuggestion> {
         let mut suggestions = Vec::new();
-        
+
         // Convert recent commands to anonymized format
         let anonymized: Vec<AnonymizedCommand> = context
             .recent_commands
             .iter()
             .map(|cmd| self.anonymize_command(cmd.clone()))
             .collect();
-        
+
         // Find matching patterns
-        let patterns = self.pattern_system.find_matching_patterns(&anonymized).await;
-        
+        let patterns = self
+            .pattern_system
+            .find_matching_patterns(&anonymized)
+            .await;
+
         for pattern in patterns {
             if let Some(suggestion) = self.pattern_to_suggestion(&pattern, context).await {
                 suggestions.push(suggestion);
             }
         }
-        
+
         suggestions
     }
-    
+
     /// Generate suggestions from templates
-    async fn generate_template_suggestions(&self, context: &SuggestionContext) -> Vec<DebugSuggestion> {
+    async fn generate_template_suggestions(
+        &self,
+        context: &SuggestionContext,
+    ) -> Vec<DebugSuggestion> {
         let mut suggestions = Vec::new();
         let templates = self.templates.read().await;
-        
+
         for template in templates.iter() {
             if self.matches_condition(&template.condition, context) {
                 suggestions.push(DebugSuggestion {
@@ -210,38 +219,47 @@ impl SuggestionEngine {
                 });
             }
         }
-        
+
         suggestions
     }
-    
+
     /// Generate context-aware suggestions
-    async fn generate_context_suggestions(&self, context: &SuggestionContext) -> Vec<DebugSuggestion> {
+    async fn generate_context_suggestions(
+        &self,
+        context: &SuggestionContext,
+    ) -> Vec<DebugSuggestion> {
         let mut suggestions = Vec::new();
-        
+
         // Performance issues
         if context.system_state.fps < 30.0 {
             suggestions.push(DebugSuggestion {
                 command: "profile_system".to_string(),
                 confidence: 0.9,
-                reasoning: format!("FPS is low ({:.1}), profiling can identify bottlenecks", context.system_state.fps),
+                reasoning: format!(
+                    "FPS is low ({:.1}), profiling can identify bottlenecks",
+                    context.system_state.fps
+                ),
                 expected_outcome: "Identify systems causing frame drops".to_string(),
                 pattern_id: None,
                 priority: 10,
             });
         }
-        
+
         // Memory issues
         if context.system_state.memory_mb > 500.0 {
             suggestions.push(DebugSuggestion {
                 command: "profile_memory".to_string(),
                 confidence: 0.85,
-                reasoning: format!("High memory usage ({:.1}MB)", context.system_state.memory_mb),
+                reasoning: format!(
+                    "High memory usage ({:.1}MB)",
+                    context.system_state.memory_mb
+                ),
                 expected_outcome: "Identify memory leaks or excessive allocations".to_string(),
                 pattern_id: None,
                 priority: 9,
             });
         }
-        
+
         // Entity explosion
         if context.system_state.entity_count > 10000 {
             suggestions.push(DebugSuggestion {
@@ -253,7 +271,7 @@ impl SuggestionEngine {
                 priority: 8,
             });
         }
-        
+
         // Error state
         if context.system_state.has_errors {
             suggestions.push(DebugSuggestion {
@@ -265,10 +283,10 @@ impl SuggestionEngine {
                 priority: 15,
             });
         }
-        
+
         suggestions
     }
-    
+
     /// Convert a pattern to a suggestion
     async fn pattern_to_suggestion(
         &self,
@@ -280,9 +298,9 @@ impl SuggestionEngine {
         if current_len >= pattern.sequence.len() {
             return None;
         }
-        
+
         let next_cmd = &pattern.sequence[current_len];
-        
+
         Some(DebugSuggestion {
             command: self.anonymized_to_command_string(next_cmd),
             confidence: pattern.confidence,
@@ -299,38 +317,39 @@ impl SuggestionEngine {
             priority: (pattern.confidence * 10.0) as i32,
         })
     }
-    
+
     /// Check if a condition matches the context
-    fn matches_condition(&self, condition: &SuggestionCondition, context: &SuggestionContext) -> bool {
+    fn matches_condition(
+        &self,
+        condition: &SuggestionCondition,
+        context: &SuggestionContext,
+    ) -> bool {
         match condition {
             SuggestionCondition::HighEntityCount(threshold) => {
                 context.system_state.entity_count > *threshold
             }
-            SuggestionCondition::LowFPS(threshold) => {
-                context.system_state.fps < *threshold
-            }
+            SuggestionCondition::LowFPS(threshold) => context.system_state.fps < *threshold,
             SuggestionCondition::HighMemory(threshold) => {
                 context.system_state.memory_mb > *threshold
             }
-            SuggestionCondition::HasErrors => {
-                context.system_state.has_errors
-            }
-            SuggestionCondition::AfterCommand(cmd_type) => {
-                context.recent_commands.last()
-                    .map(|cmd| self.get_command_type(cmd) == *cmd_type)
-                    .unwrap_or(false)
-            }
+            SuggestionCondition::HasErrors => context.system_state.has_errors,
+            SuggestionCondition::AfterCommand(cmd_type) => context
+                .recent_commands
+                .last()
+                .map(|cmd| self.get_command_type(cmd) == *cmd_type)
+                .unwrap_or(false),
             SuggestionCondition::SequenceMatch(sequence) => {
-                let recent_types: Vec<String> = context.recent_commands
+                let recent_types: Vec<String> = context
+                    .recent_commands
                     .iter()
                     .map(|cmd| self.get_command_type(cmd))
                     .collect();
-                
+
                 recent_types.ends_with(sequence)
             }
         }
     }
-    
+
     /// Track suggestion acceptance
     pub async fn track_suggestion_acceptance(
         &self,
@@ -339,14 +358,15 @@ impl SuggestionEngine {
         success: bool,
     ) {
         let mut history = self.suggestion_history.write().await;
-        
+
         history
             .entry(suggestion_id.to_string())
             .and_modify(|metrics| {
                 metrics.suggested_count += 1;
                 if accepted {
                     metrics.accepted_count += 1;
-                    metrics.success_rate = (metrics.success_rate * (metrics.accepted_count - 1) as f64
+                    metrics.success_rate = (metrics.success_rate
+                        * (metrics.accepted_count - 1) as f64
                         + if success { 1.0 } else { 0.0 })
                         / metrics.accepted_count as f64;
                 }
@@ -356,24 +376,27 @@ impl SuggestionEngine {
                 accepted_count: if accepted { 1 } else { 0 },
                 success_rate: if accepted && success { 1.0 } else { 0.0 },
             });
-        
-        debug!("Tracked suggestion acceptance: {} (accepted: {}, success: {})", 
-               suggestion_id, accepted, success);
+
+        debug!(
+            "Tracked suggestion acceptance: {} (accepted: {}, success: {})",
+            suggestion_id, accepted, success
+        );
     }
-    
+
     /// Get suggestion effectiveness metrics
     pub async fn get_suggestion_metrics(&self) -> HashMap<String, (f64, f64)> {
         let history = self.suggestion_history.read().await;
-        
+
         history
             .iter()
             .map(|(id, metrics)| {
-                let acceptance_rate = metrics.accepted_count as f64 / metrics.suggested_count as f64;
+                let acceptance_rate =
+                    metrics.accepted_count as f64 / metrics.suggested_count as f64;
                 (id.clone(), (acceptance_rate, metrics.success_rate))
             })
             .collect()
     }
-    
+
     /// Create default suggestion templates
     fn create_default_templates() -> Vec<SuggestionTemplate> {
         vec![
@@ -397,7 +420,7 @@ impl SuggestionEngine {
             },
         ]
     }
-    
+
     /// Helper to anonymize commands
     fn anonymize_command(&self, command: DebugCommand) -> AnonymizedCommand {
         // Simplified version - in production would use the pattern learning system's method
@@ -407,7 +430,7 @@ impl SuggestionEngine {
             time_bucket: crate::pattern_learning::TimeBucket::Medium,
         }
     }
-    
+
     /// Get command type as string
     fn get_command_type(&self, command: &DebugCommand) -> String {
         match command {
@@ -417,9 +440,10 @@ impl SuggestionEngine {
             DebugCommand::ProfileSystem { .. } => "profile_system",
             DebugCommand::SetVisualDebug { .. } => "set_visual_debug",
             _ => "other",
-        }.to_string()
+        }
+        .to_string()
     }
-    
+
     /// Convert anonymized command to string
     fn anonymized_to_command_string(&self, cmd: &AnonymizedCommand) -> String {
         cmd.command_type.clone()

@@ -20,16 +20,21 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use argon2::password_hash::{rand_core::OsRng, SaltString};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use chrono::{DateTime, Utc};
+use dashmap::DashMap;
+use governor::{
+    clock::DefaultClock,
+    middleware::NoOpMiddleware,
+    state::{direct::NotKeyed, InMemoryState},
+    Quota, RateLimiter,
+};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use argon2::password_hash::{rand_core::OsRng, SaltString};
-use governor::{Quota, RateLimiter, state::{direct::NotKeyed, InMemoryState}, clock::DefaultClock, middleware::NoOpMiddleware};
-use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 
 use crate::error::{Error, Result};
 
@@ -70,9 +75,9 @@ impl Role {
 pub struct Claims {
     pub sub: String,        // Subject (user ID)
     pub role: Role,         // User role
-    pub exp: u64,          // Expiration time
-    pub iat: u64,          // Issued at
-    pub jti: String,       // JWT ID for revocation
+    pub exp: u64,           // Expiration time
+    pub iat: u64,           // Issued at
+    pub jti: String,        // JWT ID for revocation
     pub session_id: String, // Session tracking
 }
 
@@ -105,7 +110,9 @@ pub struct AuditEntry {
 }
 
 // Re-export the production security configuration
-pub use crate::security_config::{ProductionSecurityConfig as SecurityConfig, ENVIRONMENT_VARIABLES_HELP};
+pub use crate::security_config::{
+    ProductionSecurityConfig as SecurityConfig, ENVIRONMENT_VARIABLES_HELP,
+};
 
 /// Active session tracking
 #[derive(Debug, Clone)]
@@ -148,9 +155,13 @@ impl SecurityManager {
 
         // Setup global rate limiter (will be supplemented with per-IP limiting)
         let quota = Quota::per_minute(
-                std::num::NonZeroU32::new(config.rate_limit_per_ip).unwrap_or(std::num::NonZeroU32::new(100).unwrap())
-            )
-            .allow_burst(std::num::NonZeroU32::new(config.rate_limit_burst.try_into().unwrap_or(10)).unwrap_or(std::num::NonZeroU32::new(10).unwrap()));
+            std::num::NonZeroU32::new(config.rate_limit_per_ip)
+                .unwrap_or(std::num::NonZeroU32::new(100).unwrap()),
+        )
+        .allow_burst(
+            std::num::NonZeroU32::new(config.rate_limit_burst.try_into().unwrap_or(10))
+                .unwrap_or(std::num::NonZeroU32::new(10).unwrap()),
+        );
         let rate_limiter = Arc::new(RateLimiter::direct(quota));
 
         let manager = Self {
@@ -181,21 +192,21 @@ impl SecurityManager {
     /// Initialize default users for first-time setup with secure passwords
     async fn initialize_default_users(&self) -> Result<()> {
         let mut users = self.users.write().await;
-        
+
         if users.is_empty() {
             if self.config.production_mode {
                 // In production, do not create default users - require explicit user creation
                 warn!("Production mode: No default users created. Use user management tools to create initial admin user.");
                 return Ok(());
             }
-            
+
             info!("Development mode: Creating default users with secure random passwords");
-            
+
             // Generate secure random passwords for development
             let admin_password = SecurityConfig::generate_initial_password()?;
             let dev_password = SecurityConfig::generate_initial_password()?;
             let viewer_password = SecurityConfig::generate_initial_password()?;
-            
+
             let admin_user = User {
                 id: "admin".to_string(),
                 username: "admin".to_string(),
@@ -205,7 +216,7 @@ impl SecurityManager {
                 last_login: None,
                 active: true,
             };
-            
+
             let dev_user = User {
                 id: "developer".to_string(),
                 username: "developer".to_string(),
@@ -215,7 +226,7 @@ impl SecurityManager {
                 last_login: None,
                 active: true,
             };
-            
+
             let viewer_user = User {
                 id: "viewer".to_string(),
                 username: "viewer".to_string(),
@@ -225,11 +236,11 @@ impl SecurityManager {
                 last_login: None,
                 active: true,
             };
-            
+
             users.insert("admin".to_string(), admin_user);
             users.insert("developer".to_string(), dev_user);
             users.insert("viewer".to_string(), viewer_user);
-            
+
             // Log the generated passwords (only in development)
             warn!("=== DEVELOPMENT MODE CREDENTIALS ===");
             warn!("Admin username: admin, password: {}", admin_password);
@@ -238,7 +249,7 @@ impl SecurityManager {
             warn!("=== SAVE THESE CREDENTIALS NOW ===");
             warn!("These are one-time generated passwords for development only");
         }
-        
+
         Ok(())
     }
 
@@ -249,11 +260,11 @@ impl SecurityManager {
 
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
-        
+
         let password_hash = argon2
             .hash_password(password.as_bytes(), &salt)
             .map_err(|e| Error::SecurityError(format!("Password hashing failed: {}", e)))?;
-            
+
         Ok(password_hash.to_string())
     }
 
@@ -261,16 +272,34 @@ impl SecurityManager {
     pub fn verify_password(&self, password: &str, hash: &str) -> Result<bool> {
         let parsed_hash = PasswordHash::new(hash)
             .map_err(|e| Error::SecurityError(format!("Invalid password hash: {}", e)))?;
-            
+
         let argon2 = Argon2::default();
-        Ok(argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok())
+        Ok(argon2
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok())
     }
 
     /// Authenticate user and return JWT token
-    pub async fn authenticate(&self, username: &str, password: &str, ip_address: Option<String>, user_agent: Option<String>) -> Result<String> {
+    pub async fn authenticate(
+        &self,
+        username: &str,
+        password: &str,
+        ip_address: Option<String>,
+        user_agent: Option<String>,
+    ) -> Result<String> {
         // Check rate limiting first
         if self.rate_limiter.check().is_err() {
-            self.log_audit("authentication", username, None, false, Some("Rate limit exceeded"), ip_address.as_deref(), user_agent.as_deref(), None).await;
+            self.log_audit(
+                "authentication",
+                username,
+                None,
+                false,
+                Some("Rate limit exceeded"),
+                ip_address.as_deref(),
+                user_agent.as_deref(),
+                None,
+            )
+            .await;
             return Err(Error::SecurityError("Rate limit exceeded".to_string()));
         }
 
@@ -278,8 +307,20 @@ impl SecurityManager {
         if let Some(failed) = self.failed_logins.get(username) {
             if let Some(locked_until) = failed.locked_until {
                 if Utc::now() < locked_until {
-                    self.log_audit("authentication", username, None, false, Some("Account locked"), ip_address.as_deref(), user_agent.as_deref(), None).await;
-                    return Err(Error::SecurityError("Account is temporarily locked".to_string()));
+                    self.log_audit(
+                        "authentication",
+                        username,
+                        None,
+                        false,
+                        Some("Account locked"),
+                        ip_address.as_deref(),
+                        user_agent.as_deref(),
+                        None,
+                    )
+                    .await;
+                    return Err(Error::SecurityError(
+                        "Account is temporarily locked".to_string(),
+                    ));
                 }
             }
         }
@@ -293,14 +334,35 @@ impl SecurityManager {
                 let ua = user_agent.clone();
                 async move {
                     security.record_failed_login(&username).await;
-                    security.log_audit("authentication", &username, None, false, Some("User not found"), ip.as_deref(), ua.as_deref(), None).await;
+                    security
+                        .log_audit(
+                            "authentication",
+                            &username,
+                            None,
+                            false,
+                            Some("User not found"),
+                            ip.as_deref(),
+                            ua.as_deref(),
+                            None,
+                        )
+                        .await;
                 }
             });
             Error::SecurityError("Invalid credentials".to_string())
         })?;
 
         if !user.active {
-            self.log_audit("authentication", username, None, false, Some("User account disabled"), ip_address.as_deref(), user_agent.as_deref(), None).await;
+            self.log_audit(
+                "authentication",
+                username,
+                None,
+                false,
+                Some("User account disabled"),
+                ip_address.as_deref(),
+                user_agent.as_deref(),
+                None,
+            )
+            .await;
             return Err(Error::SecurityError("Account is disabled".to_string()));
         }
 
@@ -313,7 +375,18 @@ impl SecurityManager {
                 let ua = user_agent.clone();
                 async move {
                     security.record_failed_login(&username).await;
-                    security.log_audit("authentication", &username, None, false, Some("Invalid password"), ip.as_deref(), ua.as_deref(), None).await;
+                    security
+                        .log_audit(
+                            "authentication",
+                            &username,
+                            None,
+                            false,
+                            Some("Invalid password"),
+                            ip.as_deref(),
+                            ua.as_deref(),
+                            None,
+                        )
+                        .await;
                 }
             });
             return Err(Error::SecurityError("Invalid credentials".to_string()));
@@ -335,9 +408,12 @@ impl SecurityManager {
         self.active_sessions.insert(session_id.clone(), session);
 
         // Generate JWT token
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let exp = now + (self.config.jwt_expiry_hours * 3600);
-        
+
         let claims = Claims {
             sub: user.id.clone(),
             role: user.role.clone(),
@@ -357,7 +433,17 @@ impl SecurityManager {
             user.last_login = Some(Utc::now());
         }
 
-        self.log_audit("authentication", username, None, true, None, ip_address.as_deref(), user_agent.as_deref(), Some(&session_id)).await;
+        self.log_audit(
+            "authentication",
+            username,
+            None,
+            true,
+            None,
+            ip_address.as_deref(),
+            user_agent.as_deref(),
+            Some(&session_id),
+        )
+        .await;
         info!("User {} authenticated successfully", username);
 
         Ok(token)
@@ -368,7 +454,7 @@ impl SecurityManager {
         // Check if token is revoked
         let mut validation = Validation::new(Algorithm::HS256);
         validation.leeway = 30; // Allow 30 seconds leeway for clock skew
-        
+
         let token_data = decode::<Claims>(token, &self.decoding_key, &validation)
             .map_err(|e| Error::SecurityError(format!("Invalid token: {}", e)))?;
 
@@ -383,16 +469,19 @@ impl SecurityManager {
         if let Some(session) = self.active_sessions.get(&claims.session_id) {
             let mut session = session.clone();
             session.last_activity = Utc::now();
-            self.active_sessions.insert(claims.session_id.clone(), session);
+            self.active_sessions
+                .insert(claims.session_id.clone(), session);
         } else {
-            return Err(Error::SecurityError("Session not found or expired".to_string()));
+            return Err(Error::SecurityError(
+                "Session not found or expired".to_string(),
+            ));
         }
 
         // Verify user still exists and is active
         let users = self.users.read().await;
-        let user = users.get(&claims.sub).ok_or_else(|| 
-            Error::SecurityError("User no longer exists".to_string())
-        )?;
+        let user = users
+            .get(&claims.sub)
+            .ok_or_else(|| Error::SecurityError("User no longer exists".to_string()))?;
 
         if !user.active {
             return Err(Error::SecurityError("User account is disabled".to_string()));
@@ -402,11 +491,26 @@ impl SecurityManager {
     }
 
     /// Check if user has permission for a specific operation
-    pub async fn check_permission(&self, token: &str, required_role: &Role, operation: &str) -> Result<Claims> {
+    pub async fn check_permission(
+        &self,
+        token: &str,
+        required_role: &Role,
+        operation: &str,
+    ) -> Result<Claims> {
         let claims = self.validate_token(token).await?;
-        
+
         if !claims.role.has_permission(required_role) {
-            self.log_audit("authorization", &claims.sub, Some(operation), false, Some("Insufficient permissions"), None, None, Some(&claims.session_id)).await;
+            self.log_audit(
+                "authorization",
+                &claims.sub,
+                Some(operation),
+                false,
+                Some("Insufficient permissions"),
+                None,
+                None,
+                Some(&claims.session_id),
+            )
+            .await;
             return Err(Error::SecurityError(format!(
                 "Insufficient permissions: {} role required, user has {} role",
                 serde_json::to_string(required_role).unwrap_or_default(),
@@ -414,38 +518,65 @@ impl SecurityManager {
             )));
         }
 
-        self.log_audit("authorization", &claims.sub, Some(operation), true, None, None, None, Some(&claims.session_id)).await;
+        self.log_audit(
+            "authorization",
+            &claims.sub,
+            Some(operation),
+            true,
+            None,
+            None,
+            None,
+            Some(&claims.session_id),
+        )
+        .await;
         Ok(claims)
     }
 
     /// Revoke a JWT token
     pub async fn revoke_token(&self, token: &str) -> Result<()> {
         let claims = self.validate_token(token).await?;
-        
+
         // Add to revoked tokens
         self.revoked_tokens.insert(claims.jti.clone(), Utc::now());
-        
+
         // Remove active session
         self.active_sessions.remove(&claims.session_id);
-        
-        self.log_audit("token_revocation", &claims.sub, None, true, None, None, None, Some(&claims.session_id)).await;
+
+        self.log_audit(
+            "token_revocation",
+            &claims.sub,
+            None,
+            true,
+            None,
+            None,
+            None,
+            Some(&claims.session_id),
+        )
+        .await;
         info!("Token revoked for user {}", claims.sub);
-        
+
         Ok(())
     }
 
     /// Record a failed login attempt
     async fn record_failed_login(&self, username: &str) {
         let now = Utc::now();
-        
+
         match self.failed_logins.get_mut(username) {
             Some(mut entry) => {
                 entry.count += 1;
                 entry.last_attempt = now;
-                
+
                 if entry.count >= self.config.max_failed_logins {
-                    entry.locked_until = Some(now + chrono::Duration::minutes(self.config.lockout_duration_minutes as i64));
-                    warn!("Account {} locked due to {} failed login attempts", username, entry.count);
+                    entry.locked_until = Some(
+                        now + chrono::Duration::minutes(
+                            self.config.lockout_duration_minutes as i64,
+                        ),
+                    );
+                    warn!(
+                        "Account {} locked due to {} failed login attempts",
+                        username, entry.count
+                    );
                 }
             }
             None => {
@@ -461,7 +592,17 @@ impl SecurityManager {
     }
 
     /// Log an audit entry
-    async fn log_audit(&self, action: &str, user_id: &str, resource: Option<&str>, success: bool, error_message: Option<&str>, ip_address: Option<&str>, user_agent: Option<&str>, session_id: Option<&str>) {
+    async fn log_audit(
+        &self,
+        action: &str,
+        user_id: &str,
+        resource: Option<&str>,
+        success: bool,
+        error_message: Option<&str>,
+        ip_address: Option<&str>,
+        user_agent: Option<&str>,
+        session_id: Option<&str>,
+    ) {
         let entry = AuditEntry {
             id: Uuid::new_v4().to_string(),
             user_id: user_id.to_string(),
@@ -480,14 +621,21 @@ impl SecurityManager {
         audit_log.push(entry);
 
         // Cleanup old entries
-        let retention_cutoff = Utc::now() - chrono::Duration::days(self.config.audit_log_retention_days as i64);
+        let retention_cutoff =
+            Utc::now() - chrono::Duration::days(self.config.audit_log_retention_days as i64);
         audit_log.retain(|entry| entry.timestamp > retention_cutoff);
     }
 
     /// Get audit log entries (admin only)
-    pub async fn get_audit_log(&self, token: &str, limit: Option<usize>, offset: Option<usize>) -> Result<Vec<AuditEntry>> {
-        self.check_permission(token, &Role::Admin, "audit_log_access").await?;
-        
+    pub async fn get_audit_log(
+        &self,
+        token: &str,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<AuditEntry>> {
+        self.check_permission(token, &Role::Admin, "audit_log_access")
+            .await?;
+
         let audit_log = self.audit_log.read().await;
         let start = offset.unwrap_or(0);
         let end = if let Some(limit) = limit {
@@ -495,14 +643,21 @@ impl SecurityManager {
         } else {
             audit_log.len()
         };
-        
+
         Ok(audit_log[start..end].to_vec())
     }
 
     /// Create a new user (admin only)
-    pub async fn create_user(&self, token: &str, username: &str, password: &str, role: Role) -> Result<()> {
-        self.check_permission(token, &Role::Admin, "user_management").await?;
-        
+    pub async fn create_user(
+        &self,
+        token: &str,
+        username: &str,
+        password: &str,
+        role: Role,
+    ) -> Result<()> {
+        self.check_permission(token, &Role::Admin, "user_management")
+            .await?;
+
         let password_hash = self.hash_password(password)?;
         let user = User {
             id: username.to_string(),
@@ -518,62 +673,70 @@ impl SecurityManager {
         if users.contains_key(username) {
             return Err(Error::SecurityError("User already exists".to_string()));
         }
-        
+
         users.insert(username.to_string(), user);
         info!("User {} created", username);
-        
+
         Ok(())
     }
 
     /// Delete a user (admin only)
     pub async fn delete_user(&self, token: &str, username: &str) -> Result<()> {
-        let claims = self.check_permission(token, &Role::Admin, "user_management").await?;
-        
+        let claims = self
+            .check_permission(token, &Role::Admin, "user_management")
+            .await?;
+
         // Prevent self-deletion
         if claims.sub == username {
-            return Err(Error::SecurityError("Cannot delete your own account".to_string()));
+            return Err(Error::SecurityError(
+                "Cannot delete your own account".to_string(),
+            ));
         }
-        
+
         let mut users = self.users.write().await;
         if users.remove(username).is_none() {
             return Err(Error::SecurityError("User not found".to_string()));
         }
-        
+
         // Revoke all sessions for this user
-        let user_sessions: Vec<_> = self.active_sessions
+        let user_sessions: Vec<_> = self
+            .active_sessions
             .iter()
             .filter(|entry| entry.user_id == username)
             .map(|entry| entry.key().clone())
             .collect();
-            
+
         for session_id in user_sessions {
             self.active_sessions.remove(&session_id);
         }
-        
+
         info!("User {} deleted", username);
         Ok(())
     }
 
     /// List all users (admin only)
     pub async fn list_users(&self, token: &str) -> Result<Vec<User>> {
-        self.check_permission(token, &Role::Admin, "user_management").await?;
-        
+        self.check_permission(token, &Role::Admin, "user_management")
+            .await?;
+
         let users = self.users.read().await;
         let mut user_list: Vec<User> = users.values().cloned().collect();
         user_list.sort_by(|a, b| a.username.cmp(&b.username));
-        
+
         Ok(user_list)
     }
 
     /// Get active sessions (admin only)
     pub async fn get_active_sessions(&self, token: &str) -> Result<Vec<Session>> {
-        self.check_permission(token, &Role::Admin, "session_management").await?;
-        
-        let sessions: Vec<Session> = self.active_sessions
+        self.check_permission(token, &Role::Admin, "session_management")
+            .await?;
+
+        let sessions: Vec<Session> = self
+            .active_sessions
             .iter()
             .map(|entry| entry.value().clone())
             .collect();
-            
+
         Ok(sessions)
     }
 
@@ -581,24 +744,26 @@ impl SecurityManager {
     pub async fn cleanup(&self) {
         let now = Utc::now();
         let session_timeout = chrono::Duration::hours(self.config.session_timeout_hours as i64);
-        
+
         // Remove expired sessions
-        let expired_sessions: Vec<_> = self.active_sessions
+        let expired_sessions: Vec<_> = self
+            .active_sessions
             .iter()
             .filter(|entry| now.signed_duration_since(entry.last_activity) > session_timeout)
             .map(|entry| entry.key().clone())
             .collect();
-            
+
         for session_id in expired_sessions {
             self.active_sessions.remove(&session_id);
         }
-        
+
         // Remove old revoked tokens (keep for JWT expiry time)
         let token_retention = chrono::Duration::hours(self.config.jwt_expiry_hours as i64 * 2);
         let revoked_cutoff = now - token_retention;
-        
-        self.revoked_tokens.retain(|_, &mut revoked_at| revoked_at > revoked_cutoff);
-        
+
+        self.revoked_tokens
+            .retain(|_, &mut revoked_at| revoked_at > revoked_cutoff);
+
         debug!("Security cleanup completed");
     }
 }
@@ -635,23 +800,26 @@ impl SecurityMiddleware {
         match operation {
             // Viewer permissions (read-only operations)
             "observe" | "hypothesis" | "detect_anomaly" => role.level() >= 1,
-            
+
             // Developer permissions (can modify state)
             "experiment" | "stress_test" | "time_travel_replay" => role.level() >= 2,
-            
+
             // Admin permissions (system management)
             "user_management" | "audit_log_access" | "session_management" => role.level() >= 3,
-            
+
             // Default to requiring developer role
             _ => role.level() >= 2,
         }
     }
 
     /// Validate token and check permissions for a tool operation
-    pub async fn authorize_tool_call(&self, token: Option<&str>, operation: &str) -> Result<Claims> {
-        let token = token.ok_or_else(|| 
-            Error::SecurityError("Authentication token required".to_string())
-        )?;
+    pub async fn authorize_tool_call(
+        &self,
+        token: Option<&str>,
+        operation: &str,
+    ) -> Result<Claims> {
+        let token = token
+            .ok_or_else(|| Error::SecurityError("Authentication token required".to_string()))?;
 
         // Validate token
         let claims = self.security_manager.validate_token(token).await?;
@@ -681,8 +849,10 @@ impl SecurityAudit {
 
     /// Run security vulnerability scan
     pub async fn run_security_scan(&self, token: &str) -> Result<SecurityScanReport> {
-        self.security_manager.check_permission(token, &Role::Admin, "security_scan").await?;
-        
+        self.security_manager
+            .check_permission(token, &Role::Admin, "security_scan")
+            .await?;
+
         let mut report = SecurityScanReport {
             scan_time: Utc::now(),
             vulnerabilities: Vec::new(),
@@ -692,25 +862,50 @@ impl SecurityAudit {
         // Check for default passwords
         let users = self.security_manager.users.read().await;
         for user in users.values() {
-            if user.username == "admin" && self.security_manager.verify_password("admin123", &user.password_hash).unwrap_or(false) {
-                report.vulnerabilities.push("Default admin password detected".to_string());
-                report.recommendations.push("Change the default admin password immediately".to_string());
+            if user.username == "admin"
+                && self
+                    .security_manager
+                    .verify_password("admin123", &user.password_hash)
+                    .unwrap_or(false)
+            {
+                report
+                    .vulnerabilities
+                    .push("Default admin password detected".to_string());
+                report
+                    .recommendations
+                    .push("Change the default admin password immediately".to_string());
             }
         }
 
         // Check for weak JWT secret
-        if self.security_manager.config.jwt_secret.contains("change_in_production") {
-            report.vulnerabilities.push("Default JWT secret detected".to_string());
-            report.recommendations.push("Configure a strong, random JWT secret".to_string());
+        if self
+            .security_manager
+            .config
+            .jwt_secret
+            .contains("change_in_production")
+        {
+            report
+                .vulnerabilities
+                .push("Default JWT secret detected".to_string());
+            report
+                .recommendations
+                .push("Configure a strong, random JWT secret".to_string());
         }
 
         // Check password policy
         if self.security_manager.config.password_min_length < 12 {
-            report.vulnerabilities.push("Weak password policy".to_string());
-            report.recommendations.push("Increase minimum password length to 12+ characters".to_string());
+            report
+                .vulnerabilities
+                .push("Weak password policy".to_string());
+            report
+                .recommendations
+                .push("Increase minimum password length to 12+ characters".to_string());
         }
 
-        info!("Security scan completed, found {} vulnerabilities", report.vulnerabilities.len());
+        info!(
+            "Security scan completed, found {} vulnerabilities",
+            report.vulnerabilities.len()
+        );
         Ok(report)
     }
 }

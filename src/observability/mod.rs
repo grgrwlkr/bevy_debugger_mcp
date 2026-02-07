@@ -17,7 +17,7 @@
  */
 
 //! Comprehensive observability stack for Bevy Debugger MCP Server
-//! 
+//!
 //! This module provides production-grade monitoring, metrics, and tracing capabilities:
 //! - OpenTelemetry integration for distributed tracing
 //! - Prometheus metrics export for monitoring
@@ -25,23 +25,23 @@
 //! - Health endpoints for load balancers and Kubernetes
 //! - Alert rules and Grafana dashboards
 
-pub mod metrics;
-pub mod tracing;
-pub mod health;
-pub mod telemetry;
 pub mod alerts;
+pub mod health;
+pub mod metrics;
+pub mod telemetry;
+pub mod tracing;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
 // Re-export tracing macros since they're used throughout the module
-use crate::config::Config;
 use crate::brp_client::BrpClient;
+use crate::config::Config;
 use crate::error::Result;
 
-pub use metrics::{MetricsCollector, MCP_METRICS};
-pub use tracing::TracingService;
 pub use health::{HealthService, HealthStatus};
+pub use metrics::{MetricsCollector, MCP_METRICS};
 pub use telemetry::TelemetryService;
+pub use tracing::TracingService;
 
 /// Main observability service that coordinates all monitoring components
 pub struct ObservabilityService {
@@ -59,13 +59,13 @@ impl ObservabilityService {
 
         // Initialize metrics collection
         let metrics = Arc::new(MetricsCollector::new(&config)?);
-        
+
         // Initialize distributed tracing
         let tracing_service = Arc::new(TracingService::new(&config).await?);
-        
+
         // Initialize health monitoring
         let health_service = Arc::new(HealthService::new(brp_client.clone()).await?);
-        
+
         // Initialize telemetry service
         let telemetry_service = Arc::new(TelemetryService::new(&config).await?);
 
@@ -86,13 +86,13 @@ impl ObservabilityService {
 
         // Start metrics collection
         self.metrics.start().await?;
-        
+
         // Start tracing service
         self.tracing_service.start().await?;
-        
+
         // Start health monitoring
         self.health_service.start().await?;
-        
+
         // Start telemetry service
         self.telemetry_service.start().await?;
 
@@ -152,19 +152,19 @@ pub struct ObservabilityMetrics {
     pub request_latency_p50: f64,
     pub request_latency_p95: f64,
     pub request_latency_p99: f64,
-    
+
     /// Error rate by tool
     pub error_rate_by_tool: std::collections::HashMap<String, f64>,
-    
+
     /// Active connections
     pub active_connections: u64,
-    
+
     /// Memory usage in bytes
     pub memory_usage_bytes: u64,
-    
+
     /// CPU usage percentage
     pub cpu_usage_percent: f64,
-    
+
     /// BRP connection health status
     pub brp_connection_healthy: bool,
 }
@@ -192,7 +192,7 @@ mod tests {
     async fn test_observability_service_creation() {
         let config = Config::default();
         let brp_client = Arc::new(RwLock::new(crate::brp_client::BrpClient::new(&config)));
-        
+
         let observability = ObservabilityService::new(config, brp_client).await;
         assert!(observability.is_ok());
     }

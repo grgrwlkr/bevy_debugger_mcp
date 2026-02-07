@@ -7,7 +7,7 @@ fn main() {
     if env::var("CARGO_INSTALL_ROOT").is_ok() {
         install_control_script();
     }
-    
+
     // Re-run build script if control script changes
     println!("cargo:rerun-if-changed=scripts/bevy-debugger-control");
 }
@@ -22,15 +22,15 @@ fn install_control_script() {
             PathBuf::from(home).join(".cargo")
         }
     };
-    
+
     let bin_dir = install_root.join("bin");
     let script_dest = bin_dir.join("bevy-debugger-control");
-    
+
     // Read the control script from the package
     let script_src = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("scripts")
         .join("bevy-debugger-control");
-    
+
     // Only install if source exists
     if script_src.exists() {
         match fs::read_to_string(&script_src) {
@@ -40,7 +40,7 @@ fn install_control_script() {
                     eprintln!("Warning: Failed to install control script: {e}");
                     return;
                 }
-                
+
                 // Make the script executable on Unix-like systems
                 #[cfg(unix)]
                 {
@@ -51,7 +51,7 @@ fn install_control_script() {
                         let _ = fs::set_permissions(&script_dest, permissions);
                     }
                 }
-                
+
                 println!("cargo:warning=Installed bevy-debugger-control script to {script_dest:?}");
             }
             Err(e) => {

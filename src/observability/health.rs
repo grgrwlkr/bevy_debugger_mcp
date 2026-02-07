@@ -5,13 +5,7 @@
  * Health endpoints for load balancers and Kubernetes readiness/liveness probes
  */
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
-    routing::get,
-    Router,
-};
+use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,7 +14,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 use crate::brp_client::BrpClient;
-use crate::error::{Result, Error};
+use crate::error::{Error, Result};
 
 /// Health status enumeration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -153,10 +147,10 @@ impl HealthService {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(check_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 match Self::perform_health_checks(brp_client.clone(), start_time).await {
                     Ok(health_response) => {
                         let mut last_check = last_health_check.write().await;
@@ -192,8 +186,9 @@ impl HealthService {
             let age = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs() - health.timestamp;
-            
+                .as_secs()
+                - health.timestamp;
+
             if age < (self.health_check_interval.as_secs() * 2) {
                 return Ok(health);
             }
@@ -206,7 +201,10 @@ impl HealthService {
     /// Get readiness status (for Kubernetes readiness probe)
     pub async fn get_readiness_status(&self) -> Result<bool> {
         let health = self.get_health_status().await?;
-        Ok(matches!(health.status, HealthStatus::Healthy | HealthStatus::Degraded))
+        Ok(matches!(
+            health.status,
+            HealthStatus::Healthy | HealthStatus::Degraded
+        ))
     }
 
     /// Get liveness status (for Kubernetes liveness probe)  
@@ -222,7 +220,7 @@ impl HealthService {
         start_time: Instant,
     ) -> Result<HealthResponse> {
         let mut components = HashMap::new();
-        
+
         // Check BRP connection health
         let brp_health = Self::check_brp_connection(brp_client).await;
         components.insert("brp_connection".to_string(), brp_health);
@@ -241,13 +239,16 @@ impl HealthService {
 
         // Calculate summary
         let total_components = components.len();
-        let healthy_components = components.values()
+        let healthy_components = components
+            .values()
             .filter(|c| c.status == HealthStatus::Healthy)
             .count();
-        let degraded_components = components.values()
+        let degraded_components = components
+            .values()
             .filter(|c| c.status == HealthStatus::Degraded)
             .count();
-        let unhealthy_components = components.values()
+        let unhealthy_components = components
+            .values()
             .filter(|c| c.status == HealthStatus::Unhealthy)
             .count();
 
@@ -284,40 +285,36 @@ impl HealthService {
     /// Check BRP connection health
     async fn check_brp_connection(brp_client: Arc<RwLock<BrpClient>>) -> ComponentHealth {
         let start = Instant::now();
-        
+
         match tokio::time::timeout(Duration::from_secs(5), async {
             let client = brp_client.read().await;
             client.is_connected()
-        }).await {
-            Ok(true) => {
-                ComponentHealth::healthy("BRP connection active")
-                    .with_response_time(start.elapsed())
-            }
-            Ok(false) => {
-                ComponentHealth::degraded("BRP connection inactive")
-                    .with_response_time(start.elapsed())
-            }
-            Err(_) => {
-                ComponentHealth::unhealthy("BRP connection check timed out")
-                    .with_response_time(start.elapsed())
-            }
+        })
+        .await
+        {
+            Ok(true) => ComponentHealth::healthy("BRP connection active")
+                .with_response_time(start.elapsed()),
+            Ok(false) => ComponentHealth::degraded("BRP connection inactive")
+                .with_response_time(start.elapsed()),
+            Err(_) => ComponentHealth::unhealthy("BRP connection check timed out")
+                .with_response_time(start.elapsed()),
         }
     }
 
     /// Check system resources
     async fn check_system_resources() -> ComponentHealth {
-        use sysinfo::{System, Process, Pid};
-        
+        use sysinfo::{Pid, Process, System};
+
         let start = Instant::now();
         let mut system = System::new_all();
         system.refresh_processes();
-        
+
         let process_id = std::process::id();
-        
+
         if let Some(process) = system.process(Pid::from(process_id as usize)) {
             let cpu_usage = process.cpu_usage();
             let memory_mb = process.memory() / 1024; // Convert KB to MB
-            
+
             let status = if cpu_usage > 80.0 {
                 HealthStatus::Unhealthy
             } else if cpu_usage > 50.0 || memory_mb > 1000 {
@@ -325,9 +322,9 @@ impl HealthService {
             } else {
                 HealthStatus::Healthy
             };
-            
+
             let message = format!("CPU: {:.1}%, Memory: {}MB", cpu_usage, memory_mb);
-            
+
             ComponentHealth {
                 status,
                 message,
@@ -338,10 +335,14 @@ impl HealthService {
                 response_time_ms: start.elapsed().as_millis() as u64,
                 metadata: {
                     let mut map = HashMap::new();
-                    map.insert("cpu_usage_percent".to_string(), 
-                              serde_json::Value::from(cpu_usage as f64));
-                    map.insert("memory_usage_mb".to_string(), 
-                              serde_json::Value::from(memory_mb));
+                    map.insert(
+                        "cpu_usage_percent".to_string(),
+                        serde_json::Value::from(cpu_usage as f64),
+                    );
+                    map.insert(
+                        "memory_usage_mb".to_string(),
+                        serde_json::Value::from(memory_mb),
+                    );
                     map
                 },
             }
@@ -355,7 +356,7 @@ impl HealthService {
     async fn check_memory_usage() -> ComponentHealth {
         // This is a basic implementation - could be enhanced with leak detection
         let start = Instant::now();
-        
+
         // Basic memory check using available system info
         ComponentHealth::healthy("Memory usage within normal limits")
             .with_response_time(start.elapsed())
@@ -364,12 +365,11 @@ impl HealthService {
     /// Check available disk space
     async fn check_disk_space() -> ComponentHealth {
         let start = Instant::now();
-        
+
         // Basic disk space check - could be enhanced to check actual disk usage
         match std::env::current_dir() {
             Ok(_) => {
-                ComponentHealth::healthy("Disk space available")
-                    .with_response_time(start.elapsed())
+                ComponentHealth::healthy("Disk space available").with_response_time(start.elapsed())
             }
             Err(e) => {
                 ComponentHealth::unhealthy(&format!("Cannot access current directory: {}", e))
@@ -399,18 +399,23 @@ async fn health_handler(
                 HealthStatus::Degraded => StatusCode::OK, // Still serving traffic
                 HealthStatus::Unhealthy => StatusCode::SERVICE_UNAVAILABLE,
             };
-            
+
             // Note: Axum will set the status code from the first element of the tuple
             if status_code == StatusCode::OK {
                 Ok(Json(health))
             } else {
-                Err((status_code, serde_json::to_string(&health).unwrap_or_default()))
+                Err((
+                    status_code,
+                    serde_json::to_string(&health).unwrap_or_default(),
+                ))
             }
         }
         Err(e) => {
             error!("Health check failed: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, 
-                format!("Health check failed: {}", e)))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Health check failed: {}", e),
+            ))
         }
     }
 }
@@ -424,8 +429,10 @@ async fn liveness_handler(
         Ok(false) => Err((StatusCode::SERVICE_UNAVAILABLE, "not alive".to_string())),
         Err(e) => {
             error!("Liveness check failed: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, 
-                format!("Liveness check failed: {}", e)))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Liveness check failed: {}", e),
+            ))
         }
     }
 }
@@ -439,8 +446,10 @@ async fn readiness_handler(
         Ok(false) => Err((StatusCode::SERVICE_UNAVAILABLE, "not ready".to_string())),
         Err(e) => {
             error!("Readiness check failed: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, 
-                format!("Readiness check failed: {}", e)))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Readiness check failed: {}", e),
+            ))
         }
     }
 }
@@ -452,7 +461,7 @@ async fn health_metrics_handler(
     match health_service.get_health_status().await {
         Ok(health) => {
             let mut metrics = String::new();
-            
+
             // Overall health metric
             metrics.push_str(&format!(
                 "mcp_health_status{{}} {}\n",
@@ -462,13 +471,13 @@ async fn health_metrics_handler(
                     HealthStatus::Unhealthy => 0,
                 }
             ));
-            
+
             // Uptime metric
             metrics.push_str(&format!(
                 "mcp_uptime_seconds{{}} {}\n",
                 health.uptime_seconds
             ));
-            
+
             // Component health metrics
             for (component_name, component_health) in &health.components {
                 metrics.push_str(&format!(
@@ -480,20 +489,21 @@ async fn health_metrics_handler(
                         HealthStatus::Unhealthy => 0,
                     }
                 ));
-                
+
                 metrics.push_str(&format!(
                     "mcp_component_response_time_ms{{component=\"{}\"}} {}\n",
-                    component_name,
-                    component_health.response_time_ms
+                    component_name, component_health.response_time_ms
                 ));
             }
-            
+
             Ok(metrics)
         }
         Err(e) => {
             error!("Health metrics generation failed: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, 
-                format!("Health metrics failed: {}", e)))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Health metrics failed: {}", e),
+            ))
         }
     }
 }
@@ -507,7 +517,7 @@ mod tests {
     async fn test_health_service_creation() {
         let config = Config::default();
         let brp_client = Arc::new(RwLock::new(crate::brp_client::BrpClient::new(&config)));
-        
+
         let health_service = HealthService::new(brp_client).await;
         assert!(health_service.is_ok());
     }
@@ -517,7 +527,7 @@ mod tests {
         let health = ComponentHealth::healthy("test message")
             .with_response_time(Duration::from_millis(100))
             .with_metadata("test_key", serde_json::Value::from("test_value"));
-        
+
         assert_eq!(health.status, HealthStatus::Healthy);
         assert_eq!(health.message, "test message");
         assert_eq!(health.response_time_ms, 100);
@@ -529,11 +539,11 @@ mod tests {
         // Test healthy status
         let healthy = ComponentHealth::healthy("all good");
         assert_eq!(healthy.status, HealthStatus::Healthy);
-        
+
         // Test degraded status
         let degraded = ComponentHealth::degraded("some issues");
         assert_eq!(degraded.status, HealthStatus::Degraded);
-        
+
         // Test unhealthy status
         let unhealthy = ComponentHealth::unhealthy("major problems");
         assert_eq!(unhealthy.status, HealthStatus::Unhealthy);

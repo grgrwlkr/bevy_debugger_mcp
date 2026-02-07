@@ -16,21 +16,17 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use rmcp::{
-    model::*,
-    handler::server::ServerHandler,
-    serve_server,
-};
+use rmcp::{handler::server::ServerHandler, model::*, serve_server};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::brp_client::BrpClient;
 use crate::config::Config;
 use crate::error::Result;
 use crate::mcp_tools::BevyDebuggerTools;
 use crate::secure_mcp_tools::SecureMcpTools;
-use crate::security::{SecurityManager, SecurityConfig};
+use crate::security::{SecurityConfig, SecurityManager};
 
 /// Proper MCP server implementation using the official SDK
 pub struct McpServerV2 {
@@ -44,13 +40,16 @@ pub struct McpServerV2 {
 impl McpServerV2 {
     pub fn new(config: Config, brp_client: Arc<RwLock<BrpClient>>) -> Result<Self> {
         let tools = Arc::new(BevyDebuggerTools::new(brp_client.clone()));
-        
+
         // Initialize production-ready security system
         let security_config = SecurityConfig::new()?;
         security_config.print_security_summary();
         let security_manager = Arc::new(SecurityManager::new(security_config)?);
-        let secure_tools = Arc::new(SecureMcpTools::new(brp_client.clone(), security_manager.clone()));
-        
+        let secure_tools = Arc::new(SecureMcpTools::new(
+            brp_client.clone(),
+            security_manager.clone(),
+        ));
+
         Ok(Self {
             config,
             brp_client,
@@ -59,20 +58,23 @@ impl McpServerV2 {
             security_manager,
         })
     }
-    
+
     /// Run the server in stdio mode for Claude Code
     pub async fn run_stdio(self) -> Result<()> {
         info!("Starting MCP server in stdio mode for Claude Code integration");
-        
+
         // Initialize BRP connection
         {
             let client = self.brp_client.read().await;
             if let Err(e) = client.init().await {
                 error!("Failed to initialize BRP client: {}", e);
-                return Err(crate::error::Error::Connection(format!("BRP initialization failed: {}", e)));
+                return Err(crate::error::Error::Connection(format!(
+                    "BRP initialization failed: {}",
+                    e
+                )));
             }
         }
-        
+
         // Start BRP connection heartbeat in background
         let brp_client = self.brp_client.clone();
         tokio::spawn(async move {
@@ -86,43 +88,53 @@ impl McpServerV2 {
                 tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
             }
         });
-        
+
         // Setup signal handlers for graceful shutdown
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel(1);
-        
+
         // Handle SIGTERM and SIGINT
         tokio::spawn(async move {
             #[cfg(unix)]
             {
                 use tokio::signal::unix::{signal, SignalKind};
-                
-                let mut sigterm = signal(SignalKind::terminate()).expect("Failed to setup SIGTERM handler");
-                let mut sigint = signal(SignalKind::interrupt()).expect("Failed to setup SIGINT handler");
-                
+
+                let mut sigterm =
+                    signal(SignalKind::terminate()).expect("Failed to setup SIGTERM handler");
+                let mut sigint =
+                    signal(SignalKind::interrupt()).expect("Failed to setup SIGINT handler");
+
                 tokio::select! {
                     _ = sigterm.recv() => {
                         info!("Received SIGTERM, shutting down gracefully");
                     }
                     _ = sigint.recv() => {
-                        info!("Received SIGINT, shutting down gracefully");  
+                        info!("Received SIGINT, shutting down gracefully");
                     }
                 }
             }
             #[cfg(not(unix))]
             {
-                tokio::signal::ctrl_c().await.expect("Failed to setup Ctrl-C handler");
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("Failed to setup Ctrl-C handler");
                 info!("Received Ctrl-C, shutting down gracefully");
             }
-            
+
             let _ = shutdown_tx.send(()).await;
         });
-        
+
         info!("MCP stdio transport starting - ready for Claude Code connection");
-        
-        // Create stdio transport
-        let stdin = tokio::io::stdin();
-        let stdout = tokio::io::stdout();
-        
+
+        let auth_enabled = std::env::var("BEVY_DEBUGGER_AUTH_ENABLED")
+            .map(|value| matches!(value.to_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false);
+
+        if auth_enabled {
+            info!("MCP auth enabled: using secure tool handler");
+        } else {
+            warn!("MCP auth disabled: using insecure tool handler");
+        }
+
         // Start security cleanup task
         let security_manager = self.security_manager.clone();
         tokio::spawn(async move {
@@ -133,35 +145,100 @@ impl McpServerV2 {
             }
         });
 
-        // Run the server using the secure tools handler with proper error handling
-        tokio::select! {
-            result = serve_server(Arc::try_unwrap(self.secure_tools).unwrap_or_else(|arc| (*arc).clone()), (stdin, stdout)) => {
-                match result {
-                    Ok(_) => {
-                        info!("MCP stdio server completed successfully");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        error!("MCP stdio server error: {}", e);
-                        Err(crate::error::Error::DebugError(format!("MCP stdio server failed: {}", e)))
+        // Create stdio transport
+        let stdin = tokio::io::stdin();
+        let stdout = tokio::io::stdout();
+
+        if auth_enabled {
+            let running = serve_server(
+                Arc::try_unwrap(self.secure_tools).unwrap_or_else(|arc| (*arc).clone()),
+                (stdin, stdout),
+            )
+            .await
+            .map_err(|e| {
+                crate::error::Error::DebugError(format!("MCP stdio server failed: {}", e))
+            })?;
+
+            let cancel_token = running.cancellation_token();
+            let mut wait_handle = tokio::spawn(running.waiting());
+
+            tokio::select! {
+                result = (&mut wait_handle) => {
+                    match result {
+                        Ok(Ok(_)) => {
+                            info!("MCP stdio server completed successfully");
+                            Ok(())
+                        }
+                        Ok(Err(e)) => {
+                            error!("MCP stdio server error: {}", e);
+                            Err(crate::error::Error::DebugError(format!("MCP stdio server failed: {}", e)))
+                        }
+                        Err(e) => {
+                            error!("MCP stdio server task error: {}", e);
+                            Err(crate::error::Error::DebugError(format!("MCP stdio server failed: {}", e)))
+                        }
                     }
                 }
+                _ = shutdown_rx.recv() => {
+                    info!("Graceful shutdown requested");
+                    cancel_token.cancel();
+                    let _ = wait_handle.await;
+                    Ok(())
+                }
             }
-            _ = shutdown_rx.recv() => {
-                info!("Graceful shutdown requested");
-                Ok(())
+        } else {
+            let running = serve_server(
+                Arc::try_unwrap(self.tools).unwrap_or_else(|arc| (*arc).clone()),
+                (stdin, stdout),
+            )
+            .await
+            .map_err(|e| {
+                crate::error::Error::DebugError(format!("MCP stdio server failed: {}", e))
+            })?;
+
+            let cancel_token = running.cancellation_token();
+            let mut wait_handle = tokio::spawn(running.waiting());
+
+            tokio::select! {
+                result = (&mut wait_handle) => {
+                    match result {
+                        Ok(Ok(_)) => {
+                            info!("MCP stdio server completed successfully");
+                            Ok(())
+                        }
+                        Ok(Err(e)) => {
+                            error!("MCP stdio server error: {}", e);
+                            Err(crate::error::Error::DebugError(format!("MCP stdio server failed: {}", e)))
+                        }
+                        Err(e) => {
+                            error!("MCP stdio server task error: {}", e);
+                            Err(crate::error::Error::DebugError(format!("MCP stdio server failed: {}", e)))
+                        }
+                    }
+                }
+                _ = shutdown_rx.recv() => {
+                    info!("Graceful shutdown requested");
+                    cancel_token.cancel();
+                    let _ = wait_handle.await;
+                    Ok(())
+                }
             }
         }
     }
-    
+
     /// Run the server in TCP mode for background operation
     pub async fn run_tcp(self) -> Result<()> {
-        info!("Starting MCP server in TCP mode on port {}", self.config.mcp_port);
-        
+        info!(
+            "Starting MCP server in TCP mode on port {}",
+            self.config.mcp_port
+        );
+
         // For now, TCP mode is not implemented
         // You can use stdio mode instead
         error!("TCP mode not implemented, use stdio mode");
-        Err(crate::error::Error::DebugError("TCP mode not implemented".to_string()))
+        Err(crate::error::Error::DebugError(
+            "TCP mode not implemented".to_string(),
+        ))
     }
 }
 

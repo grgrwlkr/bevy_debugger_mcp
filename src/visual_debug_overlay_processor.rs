@@ -1,11 +1,11 @@
+use crate::brp_client::BrpClient;
 /// Visual Debug Overlay Processor for handling SetVisualDebug commands
-/// 
+///
 /// This processor handles the MCP side of visual debug overlays. The actual
 /// rendering implementation is handled by the game-side Bevy systems.
 use crate::brp_messages::{
-    DebugCommand, DebugResponse, DebugOverlayType, BrpRequest, BrpResponse, BrpResult
+    BrpRequest, BrpResponse, BrpResult, DebugCommand, DebugOverlayType, DebugResponse,
 };
-use crate::brp_client::BrpClient;
 use crate::debug_command_processor::DebugCommandProcessor;
 use crate::error::{Error, Result};
 use async_trait::async_trait;
@@ -86,12 +86,12 @@ impl VisualDebugOverlayState {
         config: Option<Value>,
     ) -> Result<()> {
         let overlay_key = self.overlay_type_to_key(overlay_type);
-        
+
         // Create the overlay config first
         let mut new_config = OverlayConfig::default();
         new_config.enabled = enabled;
         new_config.last_updated = Instant::now();
-        
+
         if let Some(cfg) = config {
             new_config.config = cfg;
         }
@@ -131,7 +131,7 @@ impl VisualDebugOverlayState {
     /// Update performance metrics
     pub fn update_metrics(&mut self, overlay_type: &DebugOverlayType, metrics: OverlayMetrics) {
         let overlay_key = self.overlay_type_to_key(overlay_type);
-        
+
         if let Some(overlay_config) = self.overlays.get_mut(&overlay_key) {
             overlay_config.metrics = metrics.clone();
         }
@@ -158,7 +158,7 @@ impl VisualDebugOverlayState {
     /// Recalculate total performance metrics
     fn recalculate_total_metrics(&mut self) {
         self.total_metrics = OverlayMetrics::default();
-        
+
         for overlay_config in self.overlays.values() {
             if overlay_config.enabled {
                 self.total_metrics.render_time_us += overlay_config.metrics.render_time_us;
@@ -218,10 +218,7 @@ impl VisualDebugOverlayState {
                 )))
             }
             Ok(response) => {
-                warn!(
-                    "Unexpected BRP response for overlay sync: {:?}",
-                    response
-                );
+                warn!("Unexpected BRP response for overlay sync: {:?}", response);
                 Err(Error::Brp("Unexpected response type".to_string()))
             }
             Err(e) => {
@@ -265,7 +262,7 @@ impl DebugCommandProcessor for VisualDebugOverlayProcessor {
                 config,
             } => {
                 let mut state = self.state.write().await;
-                
+
                 // Set overlay state
                 state
                     .set_overlay_enabled(&overlay_type, enabled, config)
@@ -275,13 +272,13 @@ impl DebugCommandProcessor for VisualDebugOverlayProcessor {
                 if state.is_performance_budget_exceeded() {
                     warn!(
                         "Visual debug overlay performance budget exceeded: {}us > {}us",
-                        state.total_metrics.render_time_us,
-                        state.performance_budget_us
+                        state.total_metrics.render_time_us, state.performance_budget_us
                     );
                 }
 
                 // Create response
-                let status = state.get_overlay_status(&overlay_type)
+                let status = state
+                    .get_overlay_status(&overlay_type)
                     .ok_or_else(|| Error::DebugError("Failed to get overlay status".to_string()))?;
 
                 Ok(DebugResponse::VisualDebugStatus {
@@ -292,7 +289,7 @@ impl DebugCommandProcessor for VisualDebugOverlayProcessor {
             }
             DebugCommand::GetStatus => {
                 let state = self.state.read().await;
-                
+
                 // Create comprehensive status report
                 let overlay_statuses: HashMap<String, Value> = state
                     .get_all_overlay_statuses()
@@ -319,10 +316,14 @@ impl DebugCommandProcessor for VisualDebugOverlayProcessor {
                     version: "0.1.2".to_string(),
                     active_sessions: overlay_statuses.len(),
                     command_queue_size: 0,
-                    performance_overhead_percent: (state.total_metrics.render_time_us as f32 / state.performance_budget_us as f32) * 100.0,
+                    performance_overhead_percent: (state.total_metrics.render_time_us as f32
+                        / state.performance_budget_us as f32)
+                        * 100.0,
                 })
             }
-            _ => Err(Error::DebugError("Unsupported command for visual debug overlay processor".to_string())),
+            _ => Err(Error::DebugError(
+                "Unsupported command for visual debug overlay processor".to_string(),
+            )),
         }
     }
 
@@ -342,14 +343,16 @@ impl DebugCommandProcessor for VisualDebugOverlayProcessor {
                 Ok(())
             }
             DebugCommand::GetStatus => Ok(()),
-            _ => Err(Error::DebugError("Command not supported by visual debug overlay processor".to_string())),
+            _ => Err(Error::DebugError(
+                "Command not supported by visual debug overlay processor".to_string(),
+            )),
         }
     }
 
     fn estimate_processing_time(&self, command: &DebugCommand) -> Duration {
         match command {
             DebugCommand::SetVisualDebug { .. } => Duration::from_millis(50), // Overlay changes can be more expensive
-            DebugCommand::GetStatus => Duration::from_millis(5), // Status is quick
+            DebugCommand::GetStatus => Duration::from_millis(5),              // Status is quick
             _ => Duration::from_millis(10),
         }
     }
@@ -379,13 +382,13 @@ mod tests {
     #[tokio::test]
     async fn test_supports_visual_debug_commands() {
         let processor = create_test_processor().await;
-        
+
         let set_command = DebugCommand::SetVisualDebug {
             overlay_type: DebugOverlayType::EntityHighlight,
             enabled: true,
             config: None,
         };
-        
+
         assert!(processor.supports_command(&set_command));
         assert!(processor.supports_command(&DebugCommand::GetStatus));
     }
@@ -393,27 +396,27 @@ mod tests {
     #[tokio::test]
     async fn test_validate_overlay_config_size() {
         let processor = create_test_processor().await;
-        
+
         // Test valid config
         let valid_command = DebugCommand::SetVisualDebug {
             overlay_type: DebugOverlayType::EntityHighlight,
             enabled: true,
             config: Some(json!({"color": [1.0, 0.0, 0.0, 1.0]})),
         };
-        
+
         assert!(processor.validate(&valid_command).await.is_ok());
-        
+
         // Test oversized config
         let large_config = json!({
             "data": "x".repeat(11_000) // Over 10k limit
         });
-        
+
         let invalid_command = DebugCommand::SetVisualDebug {
             overlay_type: DebugOverlayType::EntityHighlight,
             enabled: true,
             config: Some(large_config),
         };
-        
+
         assert!(processor.validate(&invalid_command).await.is_err());
     }
 
@@ -421,10 +424,10 @@ mod tests {
     async fn test_overlay_state_management() {
         let processor = create_test_processor().await;
         let state = processor.get_state();
-        
+
         {
             let mut state_guard = state.write().await;
-            
+
             // Test enabling overlay
             state_guard
                 .set_overlay_enabled(
@@ -440,7 +443,7 @@ mod tests {
             let state_guard = state.read().await;
             let overlay_status = state_guard.get_overlay_status(&DebugOverlayType::EntityHighlight);
             assert!(overlay_status.is_some());
-            
+
             let status = overlay_status.unwrap();
             assert!(status.enabled);
             assert_eq!(status.config["color"], json!([1.0, 0.0, 0.0, 1.0]));
@@ -451,10 +454,10 @@ mod tests {
     async fn test_performance_budget_tracking() {
         let processor = create_test_processor().await;
         let state = processor.get_state();
-        
+
         {
             let mut state_guard = state.write().await;
-            
+
             // Simulate performance metrics that exceed budget
             let high_cost_metrics = OverlayMetrics {
                 render_time_us: 3000, // 3ms, exceeds 2ms budget
@@ -462,7 +465,7 @@ mod tests {
                 memory_usage_bytes: 1024 * 1024,
                 update_count: 50,
             };
-            
+
             state_guard.update_metrics(&DebugOverlayType::EntityHighlight, high_cost_metrics);
             assert!(state_guard.is_performance_budget_exceeded());
         }
@@ -472,7 +475,7 @@ mod tests {
     async fn test_custom_overlay_types() {
         let processor = create_test_processor().await;
         let state = processor.get_state();
-        
+
         {
             let state_guard = state.read().await;
             let custom_overlay = DebugOverlayType::Custom("test_overlay".to_string());

@@ -16,17 +16,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
-use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, Semaphore};
 use futures_util::{stream, StreamExt};
 use rayon::prelude::*;
-use tracing::{debug, info, warn, error, instrument};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+use std::time::{Duration, Instant};
+use tokio::sync::{RwLock, Semaphore};
+use tracing::{debug, error, info, instrument, warn};
 
-use crate::brp_messages::{BrpRequest, BrpResponse, BrpResult, EntityData, QueryFilter};
 use crate::brp_client::BrpClient;
-use crate::query_optimization::{OptimizedQuery, QueryPerformanceMetrics, ArchetypeAccessPattern};
+use crate::brp_messages::{BrpRequest, BrpResponse, BrpResult, EntityData, QueryFilter};
 use crate::error::{Error, Result};
+use crate::query_optimization::{ArchetypeAccessPattern, OptimizedQuery, QueryPerformanceMetrics};
 
 /// Configuration for parallel query execution
 #[derive(Debug, Clone)]
@@ -111,15 +114,18 @@ impl ParallelQueryExecutor {
         self.stats.total_queries.fetch_add(1, Ordering::Relaxed);
 
         // Acquire semaphore permit to limit concurrent queries
-        let _permit = self.semaphore
+        let _permit = self
+            .semaphore
             .acquire()
             .await
             .map_err(|_| Error::Validation("Failed to acquire semaphore permit".to_string()))?;
 
         if optimized_query.should_use_parallel {
-            self.execute_parallel_query(optimized_query, brp_client, start_time).await
+            self.execute_parallel_query(optimized_query, brp_client, start_time)
+                .await
         } else {
-            self.execute_sequential_query(optimized_query, brp_client, start_time).await
+            self.execute_sequential_query(optimized_query, brp_client, start_time)
+                .await
         }
     }
 
@@ -133,30 +139,29 @@ impl ParallelQueryExecutor {
         debug!("Executing query with parallel processing");
         self.stats.parallel_queries.fetch_add(1, Ordering::Relaxed);
 
-        let batch_size = optimized_query.recommended_batch_size()
+        let batch_size = optimized_query
+            .recommended_batch_size()
             .unwrap_or(self.config.batch_size);
 
         match &optimized_query.original_request {
-            BrpRequest::Query { filter, limit, strict: _ } => {
+            BrpRequest::Query {
+                filter,
+                limit,
+                strict: _,
+            } => {
                 self.execute_parallel_filtered_query(
-                    filter, 
-                    *limit, 
-                    batch_size, 
-                    brp_client, 
-                    start_time
-                ).await
+                    filter, *limit, batch_size, brp_client, start_time,
+                )
+                .await
             }
             BrpRequest::ListEntities { filter } => {
-                self.execute_parallel_list_entities(
-                    filter, 
-                    batch_size, 
-                    brp_client, 
-                    start_time
-                ).await
+                self.execute_parallel_list_entities(filter, batch_size, brp_client, start_time)
+                    .await
             }
             _ => {
                 // Fall back to sequential for non-parallelizable requests
-                self.execute_sequential_query(optimized_query, brp_client, start_time).await
+                self.execute_sequential_query(optimized_query, brp_client, start_time)
+                    .await
             }
         }
     }
@@ -171,8 +176,8 @@ impl ParallelQueryExecutor {
         start_time: Instant,
     ) -> Result<QueryExecutionResult> {
         // First, get a rough count of entities to determine batching strategy
-        let entity_count_request = BrpRequest::ListEntities { 
-            filter: filter.clone()
+        let entity_count_request = BrpRequest::ListEntities {
+            filter: filter.clone(),
         };
 
         let entities = {
@@ -182,7 +187,9 @@ impl ParallelQueryExecutor {
                     BrpResult::Entities(entities) => entities,
                     _ => return Err(Error::Brp("Unexpected response type".to_string())),
                 },
-                BrpResponse::Error(e) => return Err(Error::Brp(format!("BRP error: {}", e.message))),
+                BrpResponse::Error(e) => {
+                    return Err(Error::Brp(format!("BRP error: {}", e.message)))
+                }
             }
         };
 
@@ -194,7 +201,9 @@ impl ParallelQueryExecutor {
 
         // Process entities in parallel batches
         let batches = self.create_entity_batches(&entities, batch_size);
-        let results = self.process_batches_parallel(batches, filter, brp_client).await?;
+        let results = self
+            .process_batches_parallel(batches, filter, brp_client)
+            .await?;
 
         // Combine results
         let mut all_entities = Vec::new();
@@ -219,11 +228,16 @@ impl ParallelQueryExecutor {
         start_time: Instant,
     ) -> Result<QueryExecutionResult> {
         // Similar to filtered query but without limit handling
-        self.execute_parallel_filtered_query(filter, None, batch_size, brp_client, start_time).await
+        self.execute_parallel_filtered_query(filter, None, batch_size, brp_client, start_time)
+            .await
     }
 
     /// Create entity batches for parallel processing
-    fn create_entity_batches(&self, entities: &[EntityData], batch_size: usize) -> Vec<Vec<EntityData>> {
+    fn create_entity_batches(
+        &self,
+        entities: &[EntityData],
+        batch_size: usize,
+    ) -> Vec<Vec<EntityData>> {
         entities
             .chunks(batch_size)
             .map(|chunk| chunk.to_vec())
@@ -239,17 +253,18 @@ impl ParallelQueryExecutor {
     ) -> Result<Vec<Vec<EntityData>>> {
         let filter = filter.clone();
         let thread_pool = self.thread_pool.clone();
-        
+
         // Process batches using async stream with parallel computation
         let results = stream::iter(batches)
             .map(move |batch| {
                 let filter = filter.clone();
                 let thread_pool = thread_pool.clone();
-                
+
                 tokio::task::spawn_blocking(move || {
                     thread_pool.install(|| {
                         // Use rayon for CPU-intensive filtering within each batch
-                        batch.into_par_iter()
+                        batch
+                            .into_par_iter()
                             .filter(|entity| Self::entity_matches_filter(entity, &filter))
                             .collect::<Vec<_>>()
                     })
@@ -282,9 +297,9 @@ impl ParallelQueryExecutor {
 
         // Check required components
         if let Some(with_components) = &filter.with {
-            let entity_components: std::collections::HashSet<String> = 
+            let entity_components: std::collections::HashSet<String> =
                 entity.components.keys().cloned().collect();
-            
+
             for required in with_components {
                 if !entity_components.contains(required) {
                     return false;
@@ -294,9 +309,9 @@ impl ParallelQueryExecutor {
 
         // Check excluded components
         if let Some(without_components) = &filter.without {
-            let entity_components: std::collections::HashSet<String> = 
+            let entity_components: std::collections::HashSet<String> =
                 entity.components.keys().cloned().collect();
-            
+
             for excluded in without_components {
                 if entity_components.contains(excluded) {
                     return false;
@@ -319,7 +334,9 @@ impl ParallelQueryExecutor {
 
         let response = {
             let mut client = brp_client.write().await;
-            client.send_request(&optimized_query.original_request).await?
+            client
+                .send_request(&optimized_query.original_request)
+                .await?
         };
 
         match response {
@@ -347,8 +364,10 @@ impl ParallelQueryExecutor {
     ) -> Result<QueryExecutionResult> {
         let execution_time = start_time.elapsed();
         let entity_count = entities.len();
-        
-        self.stats.total_entities_processed.fetch_add(entity_count, Ordering::Relaxed);
+
+        self.stats
+            .total_entities_processed
+            .fetch_add(entity_count, Ordering::Relaxed);
 
         Ok(QueryExecutionResult {
             entities,
@@ -375,8 +394,10 @@ impl ParallelQueryExecutor {
     ) -> Result<QueryExecutionResult> {
         let execution_time = start_time.elapsed();
         let entity_count = entities.len();
-        
-        self.stats.total_entities_processed.fetch_add(entity_count, Ordering::Relaxed);
+
+        self.stats
+            .total_entities_processed
+            .fetch_add(entity_count, Ordering::Relaxed);
 
         // Estimate speedup (this would be more accurate with benchmarking)
         let estimated_sequential_time = original_entity_count as f64 * 0.001; // 1ms per 1000 entities
@@ -403,9 +424,13 @@ impl ParallelQueryExecutor {
         ParallelExecutionStats {
             total_queries: AtomicUsize::new(self.stats.total_queries.load(Ordering::Relaxed)),
             parallel_queries: AtomicUsize::new(self.stats.parallel_queries.load(Ordering::Relaxed)),
-            total_entities_processed: AtomicUsize::new(self.stats.total_entities_processed.load(Ordering::Relaxed)),
+            total_entities_processed: AtomicUsize::new(
+                self.stats.total_entities_processed.load(Ordering::Relaxed),
+            ),
             average_speedup: self.stats.average_speedup,
-            peak_memory_usage: AtomicUsize::new(self.stats.peak_memory_usage.load(Ordering::Relaxed)),
+            peak_memory_usage: AtomicUsize::new(
+                self.stats.peak_memory_usage.load(Ordering::Relaxed),
+            ),
             timeout_count: AtomicUsize::new(self.stats.timeout_count.load(Ordering::Relaxed)),
         }
     }
@@ -414,7 +439,9 @@ impl ParallelQueryExecutor {
     pub fn clear_stats(&self) {
         self.stats.total_queries.store(0, Ordering::Relaxed);
         self.stats.parallel_queries.store(0, Ordering::Relaxed);
-        self.stats.total_entities_processed.store(0, Ordering::Relaxed);
+        self.stats
+            .total_entities_processed
+            .store(0, Ordering::Relaxed);
         self.stats.peak_memory_usage.store(0, Ordering::Relaxed);
         self.stats.timeout_count.store(0, Ordering::Relaxed);
     }
@@ -444,11 +471,11 @@ impl QueryExecutionResult {
     pub fn to_performance_metrics(&self, query: String) -> QueryPerformanceMetrics {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         query.hash(&mut hasher);
         let query_hash = hasher.finish();
-        
+
         QueryPerformanceMetrics {
             query_id: format!("query_{:x}", query_hash),
             query,
@@ -478,7 +505,7 @@ mod tests {
     async fn test_parallel_executor_creation() {
         let config = ParallelExecutionConfig::default();
         let executor = ParallelQueryExecutor::new(config).unwrap();
-        
+
         let stats = executor.stats();
         assert_eq!(stats.total_queries.load(Ordering::Relaxed), 0);
     }
@@ -489,8 +516,11 @@ mod tests {
             id: 1,
             components: [
                 ("Transform".to_string(), serde_json::json!({"x": 1.0})),
-                ("Velocity".to_string(), serde_json::json!({"x": 2.0}))
-            ].iter().cloned().collect(),
+                ("Velocity".to_string(), serde_json::json!({"x": 2.0})),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
         };
 
         let filter = Some(QueryFilter {
@@ -499,7 +529,9 @@ mod tests {
             where_clause: None,
         });
 
-        assert!(ParallelQueryExecutor::entity_matches_filter(&entity, &filter));
+        assert!(ParallelQueryExecutor::entity_matches_filter(
+            &entity, &filter
+        ));
 
         let filter = Some(QueryFilter {
             with: Some(vec!["Health".to_string()]),
@@ -507,17 +539,28 @@ mod tests {
             where_clause: None,
         });
 
-        assert!(!ParallelQueryExecutor::entity_matches_filter(&entity, &filter));
+        assert!(!ParallelQueryExecutor::entity_matches_filter(
+            &entity, &filter
+        ));
     }
 
     #[test]
     fn test_batch_creation() {
         let executor = ParallelQueryExecutor::new(ParallelExecutionConfig::default()).unwrap();
-        
+
         let entities = vec![
-            EntityData { id: 1, components: Default::default() },
-            EntityData { id: 2, components: Default::default() },
-            EntityData { id: 3, components: Default::default() },
+            EntityData {
+                id: 1,
+                components: Default::default(),
+            },
+            EntityData {
+                id: 2,
+                components: Default::default(),
+            },
+            EntityData {
+                id: 3,
+                components: Default::default(),
+            },
         ];
 
         let batches = executor.create_entity_batches(&entities, 2);

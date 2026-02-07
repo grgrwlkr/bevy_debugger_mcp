@@ -21,10 +21,10 @@
 //! This module provides specialized inspectors for complex Bevy component types
 //! that require domain-specific knowledge for proper inspection and visualization.
 
-use serde_json::{json, Value};
 use crate::bevy_reflection::inspector::{CustomInspector, InspectedValue};
 use crate::brp_messages::ComponentValue;
 use crate::error::{Error, Result};
+use serde_json::{json, Value};
 
 /// Inspector for Option<T> types - handles Some/None variants
 pub struct OptionInspector;
@@ -32,16 +32,14 @@ pub struct OptionInspector;
 impl CustomInspector for OptionInspector {
     fn inspect(&self, value: &ComponentValue, type_name: &str) -> Result<InspectedValue> {
         match value {
-            Value::Null => {
-                Ok(InspectedValue {
-                    name: "Option".to_string(),
-                    raw_value: value.clone(),
-                    type_info: type_name.to_string(),
-                    display_value: "None".to_string(),
-                    inspectable: false,
-                    children: None,
-                })
-            }
+            Value::Null => Ok(InspectedValue {
+                name: "Option".to_string(),
+                raw_value: value.clone(),
+                type_info: type_name.to_string(),
+                display_value: "None".to_string(),
+                inspectable: false,
+                children: None,
+            }),
             Value::Object(obj) if obj.contains_key("Some") => {
                 let some_value = &obj["Some"];
                 Ok(InspectedValue {
@@ -86,10 +84,7 @@ impl CustomInspector for OptionInspector {
     }
 
     fn supported_types(&self) -> Vec<String> {
-        vec![
-            "core::option::Option".to_string(),
-            "Option".to_string(),
-        ]
+        vec!["core::option::Option".to_string(), "Option".to_string()]
     }
 }
 
@@ -110,9 +105,13 @@ impl OptionInspector {
             Value::Null => "()".to_string(),
             Value::Bool(_) => "bool".to_string(),
             Value::Number(n) => {
-                if n.is_i64() { "i64".to_string() }
-                else if n.is_u64() { "u64".to_string() }
-                else { "f64".to_string() }
+                if n.is_i64() {
+                    "i64".to_string()
+                } else if n.is_u64() {
+                    "u64".to_string()
+                } else {
+                    "f64".to_string()
+                }
             }
             Value::String(_) => "String".to_string(),
             Value::Array(_) => "Vec<T>".to_string(),
@@ -132,7 +131,7 @@ impl CustomInspector for VecInspector {
     fn inspect(&self, value: &ComponentValue, type_name: &str) -> Result<InspectedValue> {
         if let Value::Array(arr) = value {
             let mut children = Vec::new();
-            
+
             // Inspect each element
             for (index, item) in arr.iter().enumerate() {
                 children.push(InspectedValue {
@@ -167,10 +166,16 @@ impl CustomInspector for VecInspector {
                 type_info: type_name.to_string(),
                 display_value: format!("Vec<T>[{}]", arr.len()),
                 inspectable: !arr.is_empty(),
-                children: if arr.is_empty() { None } else { Some(display_children) },
+                children: if arr.is_empty() {
+                    None
+                } else {
+                    Some(display_children)
+                },
             })
         } else {
-            Err(Error::DebugError("Vec inspector expects array value".to_string()))
+            Err(Error::DebugError(
+                "Vec inspector expects array value".to_string(),
+            ))
         }
     }
 
@@ -193,9 +198,13 @@ impl VecInspector {
             Value::Null => "()".to_string(),
             Value::Bool(_) => "bool".to_string(),
             Value::Number(n) => {
-                if n.is_i64() { "i64".to_string() }
-                else if n.is_u64() { "u64".to_string() }
-                else { "f64".to_string() }
+                if n.is_i64() {
+                    "i64".to_string()
+                } else if n.is_u64() {
+                    "u64".to_string()
+                } else {
+                    "f64".to_string()
+                }
             }
             Value::String(_) => "String".to_string(),
             Value::Array(_) => "Vec<T>".to_string(),
@@ -208,9 +217,19 @@ impl VecInspector {
             Value::Null => "null".to_string(),
             Value::Bool(b) => b.to_string(),
             Value::Number(n) => n.to_string(),
-            Value::String(s) => format!("\"{}\"", if s.len() > 30 { format!("{}...", &s[..30]) } else { s.clone() }),
+            Value::String(s) => format!(
+                "\"{}\"",
+                if s.len() > 30 {
+                    format!("{}...", &s[..30])
+                } else {
+                    s.clone()
+                }
+            ),
             Value::Array(arr) => format!("[{} items]", arr.len()),
-            Value::Object(obj) => format!("{{ {} }}", obj.keys().take(3).cloned().collect::<Vec<_>>().join(", ")),
+            Value::Object(obj) => format!(
+                "{{ {} }}",
+                obj.keys().take(3).cloned().collect::<Vec<_>>().join(", ")
+            ),
         }
     }
 
@@ -226,13 +245,17 @@ impl CustomInspector for HashMapInspector {
     fn inspect(&self, value: &ComponentValue, type_name: &str) -> Result<InspectedValue> {
         if let Value::Object(obj) = value {
             let mut children = Vec::new();
-            
+
             // Inspect each key-value pair
             for (key, val) in obj {
                 children.push(InspectedValue {
                     name: format!("[\"{}\"]", key),
                     raw_value: json!({"key": key, "value": val}),
-                    type_info: format!("({}, {})", self.infer_key_type(key), self.infer_value_type(val)),
+                    type_info: format!(
+                        "({}, {})",
+                        self.infer_key_type(key),
+                        self.infer_value_type(val)
+                    ),
                     display_value: format!("{}: {}", key, self.format_value(val)),
                     inspectable: self.is_value_inspectable(val),
                     children: None,
@@ -261,10 +284,16 @@ impl CustomInspector for HashMapInspector {
                 type_info: type_name.to_string(),
                 display_value: format!("HashMap<K,V>[{}]", obj.len()),
                 inspectable: !obj.is_empty(),
-                children: if obj.is_empty() { None } else { Some(display_children) },
+                children: if obj.is_empty() {
+                    None
+                } else {
+                    Some(display_children)
+                },
             })
         } else {
-            Err(Error::DebugError("HashMap inspector expects object value".to_string()))
+            Err(Error::DebugError(
+                "HashMap inspector expects object value".to_string(),
+            ))
         }
     }
 
@@ -291,9 +320,13 @@ impl HashMapInspector {
             Value::Null => "()".to_string(),
             Value::Bool(_) => "bool".to_string(),
             Value::Number(n) => {
-                if n.is_i64() { "i64".to_string() }
-                else if n.is_u64() { "u64".to_string() }
-                else { "f64".to_string() }
+                if n.is_i64() {
+                    "i64".to_string()
+                } else if n.is_u64() {
+                    "u64".to_string()
+                } else {
+                    "f64".to_string()
+                }
             }
             Value::String(_) => "String".to_string(),
             Value::Array(_) => "Vec<T>".to_string(),
@@ -306,7 +339,14 @@ impl HashMapInspector {
             Value::Null => "null".to_string(),
             Value::Bool(b) => b.to_string(),
             Value::Number(n) => n.to_string(),
-            Value::String(s) => format!("\"{}\"", if s.len() > 20 { format!("{}...", &s[..20]) } else { s.clone() }),
+            Value::String(s) => format!(
+                "\"{}\"",
+                if s.len() > 20 {
+                    format!("{}...", &s[..20])
+                } else {
+                    s.clone()
+                }
+            ),
             Value::Array(arr) => format!("[{} items]", arr.len()),
             Value::Object(obj) => format!("{{ {} fields }}", obj.len()),
         }
@@ -362,10 +402,7 @@ impl CustomInspector for EntityInspector {
     }
 
     fn supported_types(&self) -> Vec<String> {
-        vec![
-            "bevy_ecs::entity::Entity".to_string(),
-            "Entity".to_string(),
-        ]
+        vec!["bevy_ecs::entity::Entity".to_string(), "Entity".to_string()]
     }
 }
 
@@ -386,7 +423,7 @@ impl CustomInspector for ColorInspector {
                     obj.get("b").and_then(|v| v.as_f64()),
                 ) {
                     let a = obj.get("a").and_then(|v| v.as_f64()).unwrap_or(1.0);
-                    
+
                     kids.push(InspectedValue {
                         name: "r".to_string(),
                         raw_value: json!(r),
@@ -395,7 +432,7 @@ impl CustomInspector for ColorInspector {
                         inspectable: false,
                         children: None,
                     });
-                    
+
                     kids.push(InspectedValue {
                         name: "g".to_string(),
                         raw_value: json!(g),
@@ -404,7 +441,7 @@ impl CustomInspector for ColorInspector {
                         inspectable: false,
                         children: None,
                     });
-                    
+
                     kids.push(InspectedValue {
                         name: "b".to_string(),
                         raw_value: json!(b),
@@ -413,7 +450,7 @@ impl CustomInspector for ColorInspector {
                         inspectable: false,
                         children: None,
                     });
-                    
+
                     if a != 1.0 {
                         kids.push(InspectedValue {
                             name: "a".to_string(),
@@ -469,7 +506,7 @@ impl ColorInspector {
         let r_int = ((r * 255.0).round() as u8).clamp(0, 255);
         let g_int = ((g * 255.0).round() as u8).clamp(0, 255);
         let b_int = ((b * 255.0).round() as u8).clamp(0, 255);
-        
+
         if a >= 0.99 {
             format!("{:02X}{:02X}{:02X}", r_int, g_int, b_int)
         } else {
@@ -499,7 +536,7 @@ mod tests {
         let inspector = OptionInspector;
         let value = Value::Null;
         let result = inspector.inspect(&value, "Option<String>").unwrap();
-        
+
         assert_eq!(result.display_value, "None");
         assert!(!result.inspectable);
     }
@@ -509,7 +546,7 @@ mod tests {
         let inspector = OptionInspector;
         let value = json!({"Some": "hello"});
         let result = inspector.inspect(&value, "Option<String>").unwrap();
-        
+
         assert!(result.display_value.contains("Some"));
         assert!(result.inspectable);
         assert!(result.children.is_some());
@@ -520,7 +557,7 @@ mod tests {
         let inspector = VecInspector;
         let value = json!([1, 2, 3, 4, 5]);
         let result = inspector.inspect(&value, "Vec<i32>").unwrap();
-        
+
         assert_eq!(result.display_value, "Vec<T>[5]");
         assert!(result.inspectable);
         assert_eq!(result.children.as_ref().unwrap().len(), 5);
@@ -530,8 +567,10 @@ mod tests {
     fn test_hashmap_inspector() {
         let inspector = HashMapInspector;
         let value = json!({"key1": "value1", "key2": "value2"});
-        let result = inspector.inspect(&value, "HashMap<String, String>").unwrap();
-        
+        let result = inspector
+            .inspect(&value, "HashMap<String, String>")
+            .unwrap();
+
         assert_eq!(result.display_value, "HashMap<K,V>[2]");
         assert!(result.inspectable);
         assert_eq!(result.children.as_ref().unwrap().len(), 2);
@@ -542,7 +581,7 @@ mod tests {
         let inspector = EntityInspector;
         let value = json!({"id": 123, "generation": 1});
         let result = inspector.inspect(&value, "Entity").unwrap();
-        
+
         assert!(result.display_value.contains("Entity"));
         assert!(result.display_value.contains("123"));
         assert!(result.display_value.contains("gen: 1"));
@@ -553,7 +592,7 @@ mod tests {
         let inspector = ColorInspector;
         let value = json!({"r": 1.0, "g": 0.5, "b": 0.0, "a": 1.0});
         let result = inspector.inspect(&value, "Color").unwrap();
-        
+
         assert!(result.display_value.contains("RGBA"));
         assert!(result.display_value.contains("#"));
         assert!(result.inspectable);
@@ -563,10 +602,10 @@ mod tests {
     #[test]
     fn test_color_to_hex() {
         let inspector = ColorInspector;
-        
+
         // Pure red
         assert_eq!(inspector.rgba_to_hex(1.0, 0.0, 0.0, 1.0), "FF0000");
-        
+
         // Semi-transparent blue
         assert_eq!(inspector.rgba_to_hex(0.0, 0.0, 1.0, 0.5), "0000FF80");
     }
@@ -577,9 +616,16 @@ mod tests {
         let large_vec: Vec<i32> = (0..20).collect();
         let value = json!(large_vec);
         let result = inspector.inspect(&value, "Vec<i32>").unwrap();
-        
+
         // Should show 10 items + "... and X more"
         assert_eq!(result.children.as_ref().unwrap().len(), 11);
-        assert!(result.children.as_ref().unwrap().last().unwrap().name.contains("and"));
+        assert!(result
+            .children
+            .as_ref()
+            .unwrap()
+            .last()
+            .unwrap()
+            .name
+            .contains("and"));
     }
 }

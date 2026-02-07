@@ -4,12 +4,12 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
+use crate::bevy_reflection::{BevyReflectionInspector, ReflectionInspectionResult};
 use crate::brp_client::BrpClient;
 use crate::brp_messages::{BrpResponse, BrpResult, EntityData};
 use crate::error::{Error, Result};
 use crate::query_parser::{QueryCache, QueryMetrics, QueryParser, RegexQueryParser};
 use crate::state_diff::{FuzzyCompareConfig, GameRules, StateDiff, StateDiffResult, StateSnapshot};
-use crate::bevy_reflection::{BevyReflectionInspector, ReflectionInspectionResult};
 
 /// Shared state for the observe tool
 pub struct ObserveState {
@@ -24,7 +24,7 @@ pub struct ObserveState {
 
 impl ObserveState {
     /// Create new observe state
-    /// 
+    ///
     /// # Errors
     /// Returns error if query parser initialization fails
     pub fn new() -> Result<Self> {
@@ -40,10 +40,13 @@ impl ObserveState {
     }
 
     /// Create with custom diff configuration
-    /// 
+    ///
     /// # Errors
     /// Returns error if query parser initialization fails
-    pub fn with_diff_config(fuzzy_config: FuzzyCompareConfig, game_rules: GameRules) -> Result<Self> {
+    pub fn with_diff_config(
+        fuzzy_config: FuzzyCompareConfig,
+        game_rules: GameRules,
+    ) -> Result<Self> {
         Ok(Self {
             parser: RegexQueryParser::new()?,
             cache: QueryCache::new(300),
@@ -146,9 +149,11 @@ static OBSERVE_STATE: std::sync::OnceLock<Arc<RwLock<ObserveState>>> = std::sync
 
 fn get_observe_state() -> Arc<RwLock<ObserveState>> {
     OBSERVE_STATE
-        .get_or_init(|| Arc::new(RwLock::new(
-            ObserveState::new().expect("Default observe state should initialize successfully")
-        )))
+        .get_or_init(|| {
+            Arc::new(RwLock::new(
+                ObserveState::new().expect("Default observe state should initialize successfully"),
+            ))
+        })
         .clone()
 }
 
@@ -300,31 +305,46 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
                 if let BrpResult::Entities(entities) = result.as_ref() {
                     let mut reflection_data = Vec::new();
                     let state_guard = state.read().await;
-                    
-                    for entity in entities.iter().take(20) { // Limit reflection to first 20 entities for performance
+
+                    for entity in entities.iter().take(20) {
+                        // Limit reflection to first 20 entities for performance
                         let mut entity_reflection = serde_json::Map::new();
                         entity_reflection.insert("entity_id".to_string(), json!(entity.id));
-                        
+
                         let mut component_reflections = serde_json::Map::new();
                         for (component_type, component_value) in &entity.components {
-                            match state_guard.reflection_inspector.inspect_component(component_type, component_value).await {
+                            match state_guard
+                                .reflection_inspector
+                                .inspect_component(component_type, component_value)
+                                .await
+                            {
                                 Ok(inspection) => {
-                                    component_reflections.insert(component_type.clone(), json!(inspection));
+                                    component_reflections
+                                        .insert(component_type.clone(), json!(inspection));
                                 }
                                 Err(e) => {
-                                    warn!("Reflection inspection failed for {} on entity {}: {}", component_type, entity.id, e);
-                                    component_reflections.insert(component_type.clone(), json!({
-                                        "error": e.to_string(),
-                                        "type_name": component_type
-                                    }));
+                                    warn!(
+                                        "Reflection inspection failed for {} on entity {}: {}",
+                                        component_type, entity.id, e
+                                    );
+                                    component_reflections.insert(
+                                        component_type.clone(),
+                                        json!({
+                                            "error": e.to_string(),
+                                            "type_name": component_type
+                                        }),
+                                    );
                                 }
                             }
                         }
-                        
-                        entity_reflection.insert("component_reflections".to_string(), json!(component_reflections));
+
+                        entity_reflection.insert(
+                            "component_reflections".to_string(),
+                            json!(component_reflections),
+                        );
                         reflection_data.push(json!(entity_reflection));
                     }
-                    
+
                     // Add reflection data to result
                     if let Some(result_obj) = result_json.as_object_mut() {
                         result_obj.insert("reflection_data".to_string(), json!(reflection_data));
@@ -457,7 +477,8 @@ pub async fn get_cache_stats() -> Value {
 pub async fn clear_cache() {
     let state = get_observe_state();
     let mut state_guard = state.write().await;
-    *state_guard = ObserveState::new().expect("Default observe state should initialize successfully");
+    *state_guard =
+        ObserveState::new().expect("Default observe state should initialize successfully");
 }
 
 #[cfg(test)]

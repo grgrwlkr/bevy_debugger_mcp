@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    remote::{RemotePlugin, BrpResult},
+    remote::{BrpResult, RemotePlugin},
     render::view::screenshot::{save_to_disk, Screenshot},
 };
 use serde_json::Value;
@@ -11,8 +11,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         // Enable remote debugging with custom screenshot method
         .add_plugins(
-            RemotePlugin::default()
-                .with_method("bevy_debugger/screenshot", screenshot_handler)
+            RemotePlugin::default().with_method("bevy_debugger/screenshot", screenshot_handler),
         )
         .add_systems(Startup, setup)
         .add_systems(Update, (rotate_cube, screenshot_on_spacebar))
@@ -26,10 +25,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Add a camera
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, 0.0, 5.0),
-    ));
+    commands.spawn((Camera3d::default(), Transform::from_xyz(0.0, 0.0, 5.0)));
 
     // Add a cube
     commands.spawn((
@@ -54,10 +50,7 @@ fn setup(
 struct Cube;
 
 /// Rotate the cube each frame
-fn rotate_cube(
-    time: Res<Time>,
-    mut query: Query<&mut Transform, With<Cube>>,
-) {
+fn rotate_cube(time: Res<Time>, mut query: Query<&mut Transform, With<Cube>>) {
     for mut transform in &mut query {
         transform.rotate_y(time.delta_secs() * 0.5);
     }
@@ -80,10 +73,7 @@ fn screenshot_on_spacebar(
 }
 
 /// Custom BRP handler for screenshot requests from the debugger
-fn screenshot_handler(
-    In(params): In<Option<Value>>, 
-    mut commands: Commands,
-) -> BrpResult {
+fn screenshot_handler(In(params): In<Option<Value>>, mut commands: Commands) -> BrpResult {
     // Parse parameters from MCP request
     let path = params
         .as_ref()
@@ -100,14 +90,14 @@ fn screenshot_handler(
 
     // Note: timing controls (warmup_duration, capture_delay) are handled by the MCP server
     // before the BRP request reaches this handler
-    
+
     println!("Screenshot requested via BRP: {} -> {}", description, path);
-    
+
     // Use Bevy's built-in screenshot system
     commands
         .spawn(Screenshot::primary_window())
         .observe(save_to_disk(path.clone()));
-    
+
     // Return success response
     Ok(serde_json::json!({
         "path": path,

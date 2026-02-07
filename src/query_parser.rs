@@ -37,7 +37,7 @@ struct QueryPattern {
 
 impl RegexQueryParser {
     /// Create a new regex-based query parser
-    /// 
+    ///
     /// # Errors
     /// Returns error if any regex pattern fails to compile
     pub fn new() -> Result<Self> {

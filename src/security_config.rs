@@ -16,11 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::env;
-use ring::rand::{SystemRandom, SecureRandom};
 use base64::Engine as _;
-use tracing::{info, warn, error};
+use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
+use std::env;
+use tracing::{error, info, warn};
 
 use crate::error::{Error, Result};
 
@@ -66,14 +66,17 @@ impl ProductionSecurityConfig {
     pub fn new() -> Result<Self> {
         let production_mode = env::var("BEVY_MCP_ENV")
             .unwrap_or_else(|_| "development".to_string())
-            .to_lowercase() == "production";
+            .to_lowercase()
+            == "production";
 
         let jwt_secret = if production_mode {
             // In production, JWT secret MUST be provided via environment variable
-            env::var("BEVY_MCP_JWT_SECRET")
-                .map_err(|_| Error::SecurityError(
-                    "BEVY_MCP_JWT_SECRET environment variable is required in production mode".to_string()
-                ))?
+            env::var("BEVY_MCP_JWT_SECRET").map_err(|_| {
+                Error::SecurityError(
+                    "BEVY_MCP_JWT_SECRET environment variable is required in production mode"
+                        .to_string(),
+                )
+            })?
         } else {
             // In development, generate a secure random secret
             Self::generate_secure_jwt_secret()?
@@ -82,7 +85,7 @@ impl ProductionSecurityConfig {
         // Validate JWT secret strength
         if jwt_secret.len() < 32 {
             return Err(Error::SecurityError(
-                "JWT secret must be at least 32 characters long".to_string()
+                "JWT secret must be at least 32 characters long".to_string(),
             ));
         }
 
@@ -92,72 +95,72 @@ impl ProductionSecurityConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(if production_mode { 4 } else { 24 }),
-            
+
             rate_limit_per_ip: env::var("BEVY_MCP_RATE_LIMIT_PER_IP")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(60),
-            
+
             rate_limit_per_user: env::var("BEVY_MCP_RATE_LIMIT_PER_USER")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(100),
-            
+
             rate_limit_burst: env::var("BEVY_MCP_RATE_LIMIT_BURST")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(10),
-            
+
             password_min_length: env::var("BEVY_MCP_PASSWORD_MIN_LENGTH")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(if production_mode { 12 } else { 8 }),
-            
+
             password_require_complexity: env::var("BEVY_MCP_PASSWORD_COMPLEXITY")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(production_mode),
-            
+
             password_blacklist_check: env::var("BEVY_MCP_PASSWORD_BLACKLIST")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(production_mode),
-            
+
             session_timeout_hours: env::var("BEVY_MCP_SESSION_TIMEOUT")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(if production_mode { 4 } else { 8 }),
-            
+
             max_failed_logins: env::var("BEVY_MCP_MAX_FAILED_LOGINS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(5),
-            
+
             lockout_duration_minutes: env::var("BEVY_MCP_LOCKOUT_DURATION")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30),
-            
+
             audit_log_retention_days: env::var("BEVY_MCP_AUDIT_RETENTION")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(90),
-            
+
             audit_log_persistence: env::var("BEVY_MCP_AUDIT_PERSISTENCE")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(production_mode),
-            
+
             force_initial_password_change: env::var("BEVY_MCP_FORCE_PASSWORD_CHANGE")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(production_mode),
-            
+
             enable_lockout_recovery: env::var("BEVY_MCP_LOCKOUT_RECOVERY")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(true),
-            
+
             production_mode,
         };
 
@@ -182,13 +185,13 @@ impl ProductionSecurityConfig {
     fn generate_secure_jwt_secret() -> Result<String> {
         let rng = SystemRandom::new();
         let mut secret_bytes = vec![0u8; 64]; // 512-bit secret
-        
-        rng.fill(&mut secret_bytes)
-            .map_err(|_| Error::SecurityError("Failed to generate secure JWT secret".to_string()))?;
-        
-        let secret = base64::engine::general_purpose::STANDARD_NO_PAD
-            .encode(&secret_bytes);
-        
+
+        rng.fill(&mut secret_bytes).map_err(|_| {
+            Error::SecurityError("Failed to generate secure JWT secret".to_string())
+        })?;
+
+        let secret = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&secret_bytes);
+
         info!("Generated secure JWT secret for development mode");
         Ok(secret)
     }
@@ -210,7 +213,8 @@ impl ProductionSecurityConfig {
 
             if !(has_uppercase && has_lowercase && has_number && has_symbol) {
                 return Err(Error::SecurityError(
-                    "Password must contain uppercase, lowercase, number, and symbol characters".to_string()
+                    "Password must contain uppercase, lowercase, number, and symbol characters"
+                        .to_string(),
                 ));
             }
         }
@@ -218,7 +222,7 @@ impl ProductionSecurityConfig {
         if self.password_blacklist_check {
             if Self::is_common_password(password) {
                 return Err(Error::SecurityError(
-                    "Password is too common, please choose a more secure password".to_string()
+                    "Password is too common, please choose a more secure password".to_string(),
                 ));
             }
         }
@@ -230,19 +234,39 @@ impl ProductionSecurityConfig {
     fn is_common_password(password: &str) -> bool {
         // Simple check against most common passwords
         const COMMON_PASSWORDS: &[&str] = &[
-            "password", "123456", "123456789", "12345678", "12345",
-            "1234567890", "qwerty", "abc123", "password123", "admin",
-            "admin123", "root", "user", "guest", "test", "demo",
-            "welcome", "login", "passw0rd", "p@ssword", "p@ssw0rd"
+            "password",
+            "123456",
+            "123456789",
+            "12345678",
+            "12345",
+            "1234567890",
+            "qwerty",
+            "abc123",
+            "password123",
+            "admin",
+            "admin123",
+            "root",
+            "user",
+            "guest",
+            "test",
+            "demo",
+            "welcome",
+            "login",
+            "passw0rd",
+            "p@ssword",
+            "p@ssw0rd",
         ];
 
         let password_lower = password.to_lowercase();
-        COMMON_PASSWORDS.iter().any(|&common| password_lower == common)
+        COMMON_PASSWORDS
+            .iter()
+            .any(|&common| password_lower == common)
     }
 
     /// Generate a secure random password for initial setup
     pub fn generate_initial_password() -> Result<String> {
-        const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+        const CHARS: &[u8] =
+            b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
         const PASSWORD_LENGTH: usize = 16;
 
         let rng = SystemRandom::new();
@@ -250,9 +274,10 @@ impl ProductionSecurityConfig {
 
         for _ in 0..PASSWORD_LENGTH {
             let mut byte = [0u8; 1];
-            rng.fill(&mut byte)
-                .map_err(|_| Error::SecurityError("Failed to generate random password".to_string()))?;
-            
+            rng.fill(&mut byte).map_err(|_| {
+                Error::SecurityError("Failed to generate random password".to_string())
+            })?;
+
             let idx = (byte[0] as usize) % CHARS.len();
             password.push(CHARS[idx]);
         }
@@ -273,15 +298,16 @@ impl ProductionSecurityConfig {
         info!("Session Timeout: {} hours", self.session_timeout_hours);
         info!("Max Failed Logins: {}", self.max_failed_logins);
         info!("Audit Persistence: {}", self.audit_log_persistence);
-        info!("Force Password Change: {}", self.force_initial_password_change);
+        info!(
+            "Force Password Change: {}",
+            self.force_initial_password_change
+        );
         info!("=====================================");
     }
 
     /// Validate environment variables for production deployment
     pub fn validate_production_environment() -> Result<()> {
-        let required_env_vars = [
-            "BEVY_MCP_JWT_SECRET",
-        ];
+        let required_env_vars = ["BEVY_MCP_JWT_SECRET"];
 
         let mut missing_vars = Vec::new();
 
@@ -302,7 +328,7 @@ impl ProductionSecurityConfig {
         let jwt_secret = env::var("BEVY_MCP_JWT_SECRET").unwrap();
         if jwt_secret.len() < 32 {
             return Err(Error::SecurityError(
-                "BEVY_MCP_JWT_SECRET must be at least 32 characters long".to_string()
+                "BEVY_MCP_JWT_SECRET must be at least 32 characters long".to_string(),
             ));
         }
 

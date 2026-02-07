@@ -26,10 +26,10 @@ async fn start_mcp_server() -> Result<Child, Box<dyn std::error::Error>> {
         .env("BEVY_BRP_PORT", "15702");
 
     let child = cmd.spawn()?;
-    
+
     // Give the server a moment to start
     tokio::time::sleep(Duration::from_millis(500)).await;
-    
+
     Ok(child)
 }
 
@@ -47,11 +47,11 @@ async fn test_mcp_stdio_handshake() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut server = start_mcp_server().await?;
-    
+
     let stdin = server.stdin.as_mut().expect("Failed to get stdin");
     let stdout = server.stdout.as_mut().expect("Failed to get stdout");
     let mut reader = BufReader::new(stdout);
-    
+
     // Send MCP initialize request
     let init_request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -71,31 +71,39 @@ async fn test_mcp_stdio_handshake() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    
+
     let request_line = format!("{}\n", serde_json::to_string(&init_request)?);
     stdin.write_all(request_line.as_bytes()).await?;
     stdin.flush().await?;
-    
+
     // Try to read response with timeout
     let mut response_line = String::new();
-    match timeout(Duration::from_secs(10), reader.read_line(&mut response_line)).await {
+    match timeout(
+        Duration::from_secs(10),
+        reader.read_line(&mut response_line),
+    )
+    .await
+    {
         Ok(Ok(_)) => {
             // Parse the JSON response
             let response: serde_json::Value = serde_json::from_str(&response_line)?;
-            
+
             // Check if it's a valid MCP response
             assert!(response.get("jsonrpc").is_some());
             assert_eq!(response["jsonrpc"], "2.0");
-            
+
             // Should have either result or error
             assert!(response.get("result").is_some() || response.get("error").is_some());
-            
+
             if let Some(result) = response.get("result") {
                 // Check for server info in successful response
                 assert!(result.get("serverInfo").is_some());
                 println!("MCP handshake successful: {}", result);
             } else if let Some(error) = response.get("error") {
-                println!("MCP handshake error (expected during development): {}", error);
+                println!(
+                    "MCP handshake error (expected during development): {}",
+                    error
+                );
             }
         }
         Ok(Err(e)) => {
@@ -105,10 +113,10 @@ async fn test_mcp_stdio_handshake() -> Result<(), Box<dyn std::error::Error>> {
             println!("Timeout waiting for MCP response - server may still be starting up");
         }
     }
-    
+
     // Cleanup
     let _ = server.kill().await;
-    
+
     Ok(())
 }
 
@@ -117,14 +125,14 @@ async fn test_mcp_stdio_handshake() -> Result<(), Box<dyn std::error::Error>> {
 async fn test_brp_connectivity_validation() -> Result<(), Box<dyn std::error::Error>> {
     // This test validates that the BRP client can attempt to connect to port 15702
     // even if there's no Bevy game running (it should fail gracefully)
-    
-    use bevy_debugger_mcp::{config::Config, brp_client::BrpClient};
+
+    use bevy_debugger_mcp::{brp_client::BrpClient, config::Config};
     use std::sync::Arc;
     use tokio::sync::RwLock;
-    
+
     let config = Config::from_env().unwrap_or_default();
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
-    
+
     // Try to initialize - this should not panic even if BRP is unavailable
     {
         let client = brp_client.read().await;
@@ -138,7 +146,7 @@ async fn test_brp_connectivity_validation() -> Result<(), Box<dyn std::error::Er
             }
         }
     }
-    
+
     // Test connection retry mechanism
     {
         let mut client = brp_client.write().await;
@@ -152,7 +160,7 @@ async fn test_brp_connectivity_validation() -> Result<(), Box<dyn std::error::Er
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -165,7 +173,7 @@ async fn test_graceful_shutdown() -> Result<(), Box<dyn std::error::Error>> {
         println!("Skipping signal test on non-Unix system");
         return Ok(());
     }
-    
+
     #[cfg(unix)]
     {
         if Command::new("cargo")
@@ -178,17 +186,17 @@ async fn test_graceful_shutdown() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let mut server = start_mcp_server().await?;
-        
+
         // Give server time to set up signal handlers
         tokio::time::sleep(Duration::from_secs(1)).await;
-        
+
         // Send SIGTERM
         if let Some(id) = server.id() {
             let _ = Command::new("kill")
                 .args(&["-TERM", &id.to_string()])
                 .output();
         }
-        
+
         // Wait for graceful shutdown
         match timeout(Duration::from_secs(5), server.wait()).await {
             Ok(Ok(status)) => {
@@ -204,7 +212,7 @@ async fn test_graceful_shutdown() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -212,18 +220,18 @@ async fn test_graceful_shutdown() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_configuration_loading() {
     use bevy_debugger_mcp::config::Config;
-    
+
     // Test default configuration
     let config = Config::default();
     assert_eq!(config.bevy_brp_host, "localhost");
     assert_eq!(config.bevy_brp_port, 15702);
     assert_eq!(config.mcp_port, 3001);
-    
+
     // Test environment variable loading
     std::env::set_var("BEVY_BRP_PORT", "12345");
     let config = Config::from_env().unwrap_or_default();
     assert_eq!(config.bevy_brp_port, 12345);
-    
+
     // Cleanup
     std::env::remove_var("BEVY_BRP_PORT");
 }

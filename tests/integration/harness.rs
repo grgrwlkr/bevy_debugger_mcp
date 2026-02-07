@@ -1,24 +1,26 @@
 /// Integration Test Harness for Bevy Debugger MCP
-/// 
+///
 /// This module provides a comprehensive test harness for validating all debugging features
 /// across different scenarios with mock clients, performance validation, and comprehensive
 /// coverage analysis.
-
 use bevy_debugger_mcp::{
-    mcp_server::McpServer,
     brp_client::BrpClient,
+    brp_messages::{
+        BrpError, BrpRequest, BrpResponse, BrpResult, DebugCommand, DebugResponse, EntityData,
+        EntityId,
+    },
     config::Config,
-    brp_messages::{BrpRequest, BrpResponse, BrpResult, BrpError, DebugCommand, DebugResponse, EntityData, EntityId},
-    debug_command_processor::{DebugCommandRouter, DebugCommandRequest},
+    debug_command_processor::{DebugCommandRequest, DebugCommandRouter},
     error::{Error, Result},
+    mcp_server::McpServer,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
-use tracing::{info, warn, debug, error};
+use tracing::{debug, error, info, warn};
 
 /// Test configuration with default settings optimized for testing
 #[derive(Debug, Clone)]
@@ -37,7 +39,7 @@ impl Default for TestConfig {
             bevy_brp_host: "localhost".to_string(),
             bevy_brp_port: 15702,
             mcp_port: 3000 + (rand::random::<u16>() % 1000), // Random port for parallel tests
-            timeout_ms: 10000, // 10s timeout for tests
+            timeout_ms: 10000,                               // 10s timeout for tests
             enable_performance_tracking: true,
             enable_mock_brp: true,
         }
@@ -97,7 +99,7 @@ impl PerformanceMetrics {
                 return false;
             }
         }
-        
+
         // Check that no performance violations occurred
         self.performance_violations.is_empty()
     }
@@ -105,18 +107,21 @@ impl PerformanceMetrics {
     /// Generate performance report
     pub fn generate_report(&self) -> Value {
         let mut command_stats = serde_json::Map::new();
-        
+
         for (command, latencies) in &self.command_latencies {
             let avg = latencies.iter().sum::<Duration>() / latencies.len() as u32;
             let min = latencies.iter().min().copied().unwrap_or_default();
             let max = latencies.iter().max().copied().unwrap_or_default();
-            
-            command_stats.insert(command.clone(), json!({
-                "avg_ms": avg.as_millis(),
-                "min_ms": min.as_millis(),
-                "max_ms": max.as_millis(),
-                "samples": latencies.len()
-            }));
+
+            command_stats.insert(
+                command.clone(),
+                json!({
+                    "avg_ms": avg.as_millis(),
+                    "min_ms": min.as_millis(),
+                    "max_ms": max.as_millis(),
+                    "samples": latencies.len()
+                }),
+            );
         }
 
         json!({
@@ -153,9 +158,13 @@ impl IntegrationTestHarness {
 
         let mcp_server = Arc::new(McpServer::new(config, brp_client.clone()));
         let debug_router = Arc::new(DebugCommandRouter::new());
-        
-        let test_session_id = format!("test-{}-{}", 
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+
+        let test_session_id = format!(
+            "test-{}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             rand::random::<u32>()
         );
 
@@ -176,26 +185,31 @@ impl IntegrationTestHarness {
     /// Execute MCP tool call with performance tracking
     pub async fn execute_tool_call(&self, tool_name: &str, arguments: Value) -> Result<Value> {
         let start = Instant::now();
-        
-        info!("Executing tool call: {} with args: {}", tool_name, arguments);
-        
+
+        info!(
+            "Executing tool call: {} with args: {}",
+            tool_name, arguments
+        );
+
         let result = timeout(
             Duration::from_millis(self.config.timeout_ms),
-            self.mcp_server.handle_tool_call(tool_name, arguments.clone())
-        ).await;
+            self.mcp_server
+                .handle_tool_call(tool_name, arguments.clone()),
+        )
+        .await;
 
         let duration = start.elapsed();
-        
+
         // Record performance metrics
         if self.config.enable_performance_tracking {
             let mut metrics = self.performance_metrics.lock().await;
             metrics.record_command_latency(tool_name, duration);
-            
+
             // Check for performance violations
             if duration > Duration::from_millis(100) {
                 metrics.record_violation(format!(
-                    "Tool '{}' exceeded 100ms latency: {}ms", 
-                    tool_name, 
+                    "Tool '{}' exceeded 100ms latency: {}ms",
+                    tool_name,
                     duration.as_millis()
                 ));
             }
@@ -217,9 +231,8 @@ impl IntegrationTestHarness {
                 let mut metrics = self.performance_metrics.lock().await;
                 metrics.failed_commands += 1;
                 metrics.record_violation(format!(
-                    "Tool '{}' timed out after {}ms", 
-                    tool_name, 
-                    self.config.timeout_ms
+                    "Tool '{}' timed out after {}ms",
+                    tool_name, self.config.timeout_ms
                 ));
                 Err(Error::Timeout("Tool call timed out".to_string()))
             }
@@ -230,25 +243,25 @@ impl IntegrationTestHarness {
     pub async fn execute_debug_command(&self, command: DebugCommand) -> Result<DebugResponse> {
         let start = Instant::now();
         let command_name = format!("{:?}", command);
-        
+
         info!("Executing debug command: {}", command_name);
-        
+
         let request = DebugCommandRequest::new(command, self.test_session_id.clone(), None);
         self.debug_router.queue_command(request).await?;
-        
+
         // Process the command
         let result = self.debug_router.process_next().await;
         let duration = start.elapsed();
-        
+
         // Record performance metrics
         if self.config.enable_performance_tracking {
             let mut metrics = self.performance_metrics.lock().await;
             metrics.record_command_latency(&command_name, duration);
-            
+
             if duration > Duration::from_millis(100) {
                 metrics.record_violation(format!(
-                    "Debug command '{}' exceeded 100ms latency: {}ms", 
-                    command_name, 
+                    "Debug command '{}' exceeded 100ms latency: {}ms",
+                    command_name,
                     duration.as_millis()
                 ));
             }
@@ -256,7 +269,11 @@ impl IntegrationTestHarness {
 
         match result {
             Some(Ok((correlation_id, response))) => {
-                debug!("Debug command succeeded in {}ms (correlation: {})", duration.as_millis(), correlation_id);
+                debug!(
+                    "Debug command succeeded in {}ms (correlation: {})",
+                    duration.as_millis(),
+                    correlation_id
+                );
                 Ok(response)
             }
             Some(Err(e)) => {
@@ -269,7 +286,9 @@ impl IntegrationTestHarness {
                 error!("Debug command returned no result");
                 let mut metrics = self.performance_metrics.lock().await;
                 metrics.failed_commands += 1;
-                Err(Error::Validation("No result from debug command".to_string()))
+                Err(Error::Validation(
+                    "No result from debug command".to_string(),
+                ))
             }
         }
     }
@@ -283,11 +302,11 @@ impl IntegrationTestHarness {
     /// Verify all MCP commands are testable
     pub async fn verify_all_commands(&self) -> Result<CommandCoverage> {
         let mut coverage = CommandCoverage::default();
-        
+
         // Test all primary MCP commands
         let commands = vec![
             "observe",
-            "experiment", 
+            "experiment",
             "screenshot",
             "hypothesis",
             "stress",
@@ -302,12 +321,12 @@ impl IntegrationTestHarness {
             "diagnostic_report",
             "checkpoint",
             "bug_report",
-            "debug"
+            "debug",
         ];
 
         for command in &commands {
             coverage.total_commands += 1;
-            
+
             // Test with minimal valid arguments
             let test_args = match *command {
                 "observe" => json!({"query": "entities"}),
@@ -319,7 +338,7 @@ impl IntegrationTestHarness {
                 "anomaly" => json!({"metric": "frame_time"}),
                 "orchestrate" => json!({"tool": "observe", "arguments": {"query": "test"}}),
                 "pipeline" => json!({"template": "observe_experiment_replay"}),
-                _ => json!({})
+                _ => json!({}),
             };
 
             match self.execute_tool_call(command, test_args).await {
@@ -333,9 +352,11 @@ impl IntegrationTestHarness {
             }
         }
 
-        info!("Command coverage: {}/{} commands tested successfully", 
-              coverage.tested_commands, coverage.total_commands);
-        
+        info!(
+            "Command coverage: {}/{} commands tested successfully",
+            coverage.tested_commands, coverage.total_commands
+        );
+
         Ok(coverage)
     }
 
@@ -349,9 +370,11 @@ impl IntegrationTestHarness {
     pub async fn meets_acceptance_criteria(&self) -> AcceptanceCriteria {
         let metrics = self.performance_metrics.lock().await;
         let coverage = self.verify_all_commands().await.unwrap_or_default();
-        
+
         AcceptanceCriteria {
-            code_coverage_90_percent: coverage.tested_commands as f32 / coverage.total_commands as f32 >= 0.9,
+            code_coverage_90_percent: coverage.tested_commands as f32
+                / coverage.total_commands as f32
+                >= 0.9,
             all_mcp_commands_tested: coverage.tested_commands == coverage.total_commands,
             performance_regression_prevented: metrics.is_performance_acceptable(),
             documentation_complete: true, // TODO: Check actual documentation
@@ -363,15 +386,21 @@ impl IntegrationTestHarness {
 
     /// Clean up test resources
     pub async fn cleanup(&self) -> Result<()> {
-        info!("Cleaning up test harness for session: {}", self.test_session_id);
-        
+        info!(
+            "Cleaning up test harness for session: {}",
+            self.test_session_id
+        );
+
         // Clear mock responses
         self.mock_responses.lock().await.clear();
-        
+
         // Generate final performance report
         let report = self.get_performance_report().await;
-        debug!("Final performance report: {}", serde_json::to_string_pretty(&report)?);
-        
+        debug!(
+            "Final performance report: {}",
+            serde_json::to_string_pretty(&report)?
+        );
+
         Ok(())
     }
 }
@@ -385,18 +414,23 @@ pub struct MockBrpClient {
 impl MockBrpClient {
     pub fn new(config: &Config) -> Self {
         let mut mock_responses = HashMap::new();
-        
+
         // Set up default mock responses
-        mock_responses.insert("list_entities".to_string(), BrpResponse::Success(Box::new(
-            BrpResult::Entities(vec![])
-        )));
-        
-        mock_responses.insert("get_entity".to_string(), BrpResponse::Success(Box::new(
-            BrpResult::Entity(EntityData {
-                entity: EntityId { index: 0, generation: 0 },
-                components: vec![]
-            })
-        )));
+        mock_responses.insert(
+            "list_entities".to_string(),
+            BrpResponse::Success(Box::new(BrpResult::Entities(vec![]))),
+        );
+
+        mock_responses.insert(
+            "get_entity".to_string(),
+            BrpResponse::Success(Box::new(BrpResult::Entity(EntityData {
+                entity: EntityId {
+                    index: 0,
+                    generation: 0,
+                },
+                components: vec![],
+            }))),
+        );
 
         Self {
             config: config.clone(),
@@ -407,17 +441,18 @@ impl MockBrpClient {
     pub async fn send_request(&mut self, _request: &BrpRequest) -> Result<BrpResponse> {
         // Simulate network latency
         tokio::time::sleep(Duration::from_millis(1)).await;
-        
+
         // Return mock response based on request type
-        let response = self.mock_responses
-            .get("list_entities")
-            .cloned()
-            .unwrap_or(BrpResponse::Error(BrpError {
-                code: BrpErrorCode::InternalError,
-                message: "Mock response not configured".to_string(),
-                details: None,
-            }));
-            
+        let response =
+            self.mock_responses
+                .get("list_entities")
+                .cloned()
+                .unwrap_or(BrpResponse::Error(BrpError {
+                    code: BrpErrorCode::InternalError,
+                    message: "Mock response not configured".to_string(),
+                    details: None,
+                }));
+
         Ok(response)
     }
 
@@ -476,10 +511,12 @@ mod tests {
     #[tokio::test]
     async fn test_performance_tracking() {
         let harness = IntegrationTestHarness::new().await.unwrap();
-        
+
         // Test a simple tool call
-        let result = harness.execute_tool_call("observe", json!({"query": "test"})).await;
-        
+        let result = harness
+            .execute_tool_call("observe", json!({"query": "test"}))
+            .await;
+
         // Should get an error since we're using mock BRP, but performance should be tracked
         let report = harness.get_performance_report().await;
         assert!(report.get("total_commands").unwrap().as_u64().unwrap() >= 1);
@@ -489,7 +526,7 @@ mod tests {
     async fn test_command_coverage() {
         let harness = IntegrationTestHarness::new().await.unwrap();
         let coverage = harness.verify_all_commands().await.unwrap();
-        
+
         assert!(coverage.total_commands > 0);
         // Some commands should work even with mocks
         assert!(coverage.tested_commands >= 0);

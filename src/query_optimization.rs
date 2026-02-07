@@ -16,14 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use ahash::AHashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use ahash::AHashMap;
-use std::collections::HashSet;
-use serde::{Deserialize, Serialize};
 
 use crate::brp_messages::{BrpRequest, QueryFilter};
 use crate::error::{Error, Result};
@@ -195,14 +195,14 @@ impl QueryStateCache {
         request: &BrpRequest,
     ) -> Result<Arc<CachedQueryState>> {
         let query_hash = self.hash_request(request);
-        
+
         // Check cache first
         if let Some(cached_state) = self.cache.get_mut(&query_hash) {
             cached_state.last_used = Instant::now();
             cached_state.usage_count += 1;
             self.cache_stats.cache_hits += 1;
             self.cache_stats.total_queries += 1;
-            
+
             debug!("Query state cache hit for hash: {}", query_hash);
             return Ok(Arc::new(cached_state.clone()));
         }
@@ -215,9 +215,10 @@ impl QueryStateCache {
         // Update statistics
         self.cache_stats.cache_misses += 1;
         self.cache_stats.total_queries += 1;
-        self.cache_stats.avg_build_time_ms = 
-            (self.cache_stats.avg_build_time_ms * (self.cache_stats.cache_misses - 1) as f64 + 
-             build_time.as_millis() as f64) / self.cache_stats.cache_misses as f64;
+        self.cache_stats.avg_build_time_ms = (self.cache_stats.avg_build_time_ms
+            * (self.cache_stats.cache_misses - 1) as f64
+            + build_time.as_millis() as f64)
+            / self.cache_stats.cache_misses as f64;
 
         // Cache the new state
         self.cache.insert(query_hash, query_state.clone());
@@ -251,12 +252,17 @@ impl QueryStateCache {
     /// Analyze query pattern and determine optimal access strategy
     async fn analyze_query_pattern(&self, request: &BrpRequest) -> Result<QueryPattern> {
         let query_hash = self.hash_request(request);
-        
+
         let (access_strategy, performance_impact) = match request {
-            BrpRequest::Query { filter, limit, strict: _ } => {
-                self.analyze_query_request(filter.as_ref(), *limit).await?
-            }
-            BrpRequest::Get { entity: _, components } => {
+            BrpRequest::Query {
+                filter,
+                limit,
+                strict: _,
+            } => self.analyze_query_request(filter.as_ref(), *limit).await?,
+            BrpRequest::Get {
+                entity: _,
+                components,
+            } => {
                 // Single entity access - always fast
                 let strategy = ComponentAccessStrategy::DirectArchetype {
                     components: components.clone().unwrap_or_default(),
@@ -315,7 +321,7 @@ impl QueryStateCache {
 
         // Determine parallel threshold based on complexity
         let parallel_threshold = match (with_components.len(), without_components.len()) {
-            (0, 0) => 100,    // No filters - low threshold for parallelization
+            (0, 0) => 100,     // No filters - low threshold for parallelization
             (1..=2, 0) => 500, // Simple filters - medium threshold
             (_, _) => 1000,    // Complex filters - high threshold
         };
@@ -365,14 +371,27 @@ impl QueryStateCache {
     }
 
     /// Analyze performance characteristics of a query pattern
-    fn analyze_performance_characteristics(&self, pattern: &QueryPattern) -> QueryPerformanceCharacteristics {
-        let (parallel_friendly, estimated_entity_count, cpu_complexity) = match &pattern.access_strategy {
-            ComponentAccessStrategy::DirectArchetype { components, parallel_threshold } => {
+    fn analyze_performance_characteristics(
+        &self,
+        pattern: &QueryPattern,
+    ) -> QueryPerformanceCharacteristics {
+        let (parallel_friendly, estimated_entity_count, cpu_complexity) = match &pattern
+            .access_strategy
+        {
+            ComponentAccessStrategy::DirectArchetype {
+                components,
+                parallel_threshold,
+            } => {
                 let entity_count = self.estimate_entity_count_for_components(components);
                 (entity_count >= *parallel_threshold, entity_count, 2)
             }
-            ComponentAccessStrategy::FilteredIteration { with_components, without_components, .. } => {
-                let entity_count = self.estimate_filtered_entity_count(with_components, without_components);
+            ComponentAccessStrategy::FilteredIteration {
+                with_components,
+                without_components,
+                ..
+            } => {
+                let entity_count =
+                    self.estimate_filtered_entity_count(with_components, without_components);
                 let complexity = 3 + without_components.len() as u8;
                 (entity_count >= 500, entity_count, complexity.min(10))
             }
@@ -396,7 +415,8 @@ impl QueryStateCache {
             }
         };
 
-        let cacheable = matches!(pattern.performance_impact, 
+        let cacheable = matches!(
+            pattern.performance_impact,
             PerformanceImpact::Medium | PerformanceImpact::High | PerformanceImpact::Critical
         );
 
@@ -413,18 +433,18 @@ impl QueryStateCache {
     fn estimate_entity_count_for_components(&self, components: &[String]) -> usize {
         // This would be improved with actual archetype statistics from Bevy
         match components.len() {
-            0 => 10000,      // All entities
-            1 => 5000,       // Common components
-            2 => 2000,       // Component pairs
-            3 => 800,        // Triple components
-            _ => 200,        // Complex queries
+            0 => 10000, // All entities
+            1 => 5000,  // Common components
+            2 => 2000,  // Component pairs
+            3 => 800,   // Triple components
+            _ => 200,   // Complex queries
         }
     }
 
     /// Estimate entity count for filtered queries
     fn estimate_filtered_entity_count(&self, with: &[String], without: &[String]) -> usize {
         let base_count = self.estimate_entity_count_for_components(with);
-        
+
         // Reduce count based on exclusions
         let exclusion_factor = 1.0 - (without.len() as f64 * 0.2).min(0.8);
         (base_count as f64 * exclusion_factor) as usize
@@ -436,10 +456,14 @@ impl QueryStateCache {
         use std::hash::{Hash, Hasher};
 
         let mut hasher = DefaultHasher::new();
-        
+
         // Create a simplified hashable representation
         match request {
-            BrpRequest::Query { filter, limit, strict: _ } => {
+            BrpRequest::Query {
+                filter,
+                limit,
+                strict: _,
+            } => {
                 "Query".hash(&mut hasher);
                 // Hash filter components that can be hashed
                 if let Some(filter) = filter {
@@ -475,34 +499,37 @@ impl QueryStateCache {
                 std::mem::discriminant(request).hash(&mut hasher);
             }
         }
-        
+
         hasher.finish()
     }
 
     /// Record query execution metrics
     pub fn record_metrics(&mut self, metrics: QueryPerformanceMetrics) {
         // Update cached query state with new metrics
-        if let Some(cached_state) = self.cache.get_mut(&self.hash_request(&BrpRequest::Query { 
-            filter: None, 
+        if let Some(cached_state) = self.cache.get_mut(&self.hash_request(&BrpRequest::Query {
+            filter: None,
             limit: None,
             strict: Some(false),
         })) {
-            cached_state.avg_execution_time_ms = 
-                (cached_state.avg_execution_time_ms * (cached_state.usage_count - 1) as f64 + 
-                 metrics.execution_time_ms as f64) / cached_state.usage_count as f64;
+            cached_state.avg_execution_time_ms = (cached_state.avg_execution_time_ms
+                * (cached_state.usage_count - 1) as f64
+                + metrics.execution_time_ms as f64)
+                / cached_state.usage_count as f64;
         }
 
         // Update global statistics
-        self.cache_stats.avg_execution_time_ms = 
-            (self.cache_stats.avg_execution_time_ms * (self.metrics_history.len() as f64) + 
-             metrics.execution_time_ms as f64) / (self.metrics_history.len() + 1) as f64;
+        self.cache_stats.avg_execution_time_ms = (self.cache_stats.avg_execution_time_ms
+            * (self.metrics_history.len() as f64)
+            + metrics.execution_time_ms as f64)
+            / (self.metrics_history.len() + 1) as f64;
 
         // Store metrics
         self.metrics_history.push(metrics);
-        
+
         // Trim history if necessary
         if self.metrics_history.len() > self.max_metrics_history {
-            self.metrics_history.drain(0..self.metrics_history.len() - self.max_metrics_history);
+            self.metrics_history
+                .drain(0..self.metrics_history.len() - self.max_metrics_history);
         }
     }
 
@@ -515,7 +542,7 @@ impl QueryStateCache {
         // Find LRU entry
         let mut oldest_time = Instant::now();
         let mut oldest_hash = 0;
-        
+
         for (&hash, state) in &self.cache {
             if state.last_used < oldest_time {
                 oldest_time = state.last_used;
@@ -561,7 +588,10 @@ impl QueryOptimizer {
     /// Create new query optimizer
     pub fn new(cache_size: usize, metrics_history_size: usize, parallel_threshold: usize) -> Self {
         Self {
-            cache: Arc::new(RwLock::new(QueryStateCache::new(cache_size, metrics_history_size))),
+            cache: Arc::new(RwLock::new(QueryStateCache::new(
+                cache_size,
+                metrics_history_size,
+            ))),
             parallel_threshold,
             metrics_enabled: true,
         }
@@ -571,10 +601,10 @@ impl QueryOptimizer {
     pub async fn optimize_request(&self, request: &BrpRequest) -> Result<OptimizedQuery> {
         let mut cache = self.cache.write().await;
         let cached_state = cache.get_or_build_query_state(request).await?;
-        
-        let should_use_parallel = cached_state.perf_characteristics.parallel_friendly 
+
+        let should_use_parallel = cached_state.perf_characteristics.parallel_friendly
             && cached_state.perf_characteristics.estimated_entity_count >= self.parallel_threshold;
-            
+
         Ok(OptimizedQuery {
             original_request: request.clone(),
             cached_state,
@@ -643,9 +673,12 @@ impl OptimizedQuery {
             return None;
         }
 
-        let entity_count = self.cached_state.perf_characteristics.estimated_entity_count;
+        let entity_count = self
+            .cached_state
+            .perf_characteristics
+            .estimated_entity_count;
         let cpu_count = num_cpus::get();
-        
+
         Some((entity_count / (cpu_count * 2)).max(100).min(1000))
     }
 }
@@ -657,26 +690,26 @@ unsafe impl Sync for QueryStateCache {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_query_state_cache_basic() {
         let mut cache = QueryStateCache::new(10, 100);
-        
+
         let request = BrpRequest::ListComponents;
         let state = cache.get_or_build_query_state(&request).await.unwrap();
-        
+
         assert_eq!(state.usage_count, 1);
         assert!(cache.stats().cache_misses == 1);
-        
+
         // Second access should hit cache
         let state2 = cache.get_or_build_query_state(&request).await.unwrap();
         assert!(cache.stats().cache_hits == 1);
     }
-    
+
     #[tokio::test]
     async fn test_query_optimizer() {
         let optimizer = QueryOptimizer::new(10, 100, 500);
-        
+
         let request = BrpRequest::Query {
             filter: Some(QueryFilter {
                 with: Some(vec!["Transform".to_string()]),
@@ -686,7 +719,7 @@ mod tests {
             limit: None,
             strict: Some(false),
         };
-        
+
         let optimized = optimizer.optimize_request(&request).await.unwrap();
         assert!(optimized.optimization_applied);
     }

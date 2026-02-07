@@ -23,9 +23,9 @@ use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CircuitState {
-    Closed,    // Normal operation
-    Open,      // Failing, rejecting requests
-    HalfOpen,  // Testing if service recovered
+    Closed,   // Normal operation
+    Open,     // Failing, rejecting requests
+    HalfOpen, // Testing if service recovered
 }
 
 /// Production-grade circuit breaker for BRP connections
@@ -54,7 +54,7 @@ impl CircuitBreaker {
     /// Check if request should be allowed through the circuit breaker
     pub fn can_execute(&self) -> bool {
         let current_state = self.get_state();
-        
+
         match current_state {
             CircuitState::Closed => true,
             CircuitState::Open => {
@@ -83,7 +83,7 @@ impl CircuitBreaker {
     pub fn record_success(&self) {
         let current_state = self.get_state();
         self.success_count.fetch_add(1, Ordering::Relaxed);
-        
+
         match current_state {
             CircuitState::HalfOpen => {
                 info!("Circuit breaker: Service recovered, transitioning to CLOSED");
@@ -98,7 +98,7 @@ impl CircuitBreaker {
                 warn!("Circuit breaker: Received success while in OPEN state");
             }
         }
-        
+
         debug!("Circuit breaker: Operation succeeded");
     }
 
@@ -106,10 +106,11 @@ impl CircuitBreaker {
     pub fn record_failure(&self) {
         let current_state = self.get_state();
         let failure_count = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
-        
+
         // Update last failure time
         if let Ok(duration) = SystemTime::now().duration_since(UNIX_EPOCH) {
-            self.last_failure_time.store(duration.as_millis() as u64, Ordering::Relaxed);
+            self.last_failure_time
+                .store(duration.as_millis() as u64, Ordering::Relaxed);
         }
 
         match current_state {
@@ -131,8 +132,11 @@ impl CircuitBreaker {
                 debug!("Circuit breaker: Additional failure recorded in OPEN state");
             }
         }
-        
-        debug!("Circuit breaker: Operation failed (count: {})", failure_count);
+
+        debug!(
+            "Circuit breaker: Operation failed (count: {})",
+            failure_count
+        );
     }
 
     /// Get current circuit breaker state
@@ -178,21 +182,24 @@ impl CircuitBreaker {
 
     /// Transition to closed state
     fn transition_to_closed(&self) {
-        self.state.store(CircuitState::Closed as u32, Ordering::Relaxed);
+        self.state
+            .store(CircuitState::Closed as u32, Ordering::Relaxed);
         self.failure_count.store(0, Ordering::Relaxed);
         self.half_open_requests.store(0, Ordering::Relaxed);
     }
 
     /// Transition to open state
     fn transition_to_open(&self) {
-        self.state.store(CircuitState::Open as u32, Ordering::Relaxed);
+        self.state
+            .store(CircuitState::Open as u32, Ordering::Relaxed);
         self.half_open_requests.store(0, Ordering::Relaxed);
     }
 
     /// Transition to half-open state
     fn transition_to_half_open(&self) {
         info!("Circuit breaker: Testing service recovery, transitioning to HALF-OPEN");
-        self.state.store(CircuitState::HalfOpen as u32, Ordering::Relaxed);
+        self.state
+            .store(CircuitState::HalfOpen as u32, Ordering::Relaxed);
         self.half_open_requests.store(0, Ordering::Relaxed);
     }
 }
@@ -216,7 +223,7 @@ impl CircuitBreakerMetrics {
             (self.failure_count as f64 / total as f64) * 100.0
         }
     }
-    
+
     /// Check if circuit breaker is healthy
     pub fn is_healthy(&self) -> bool {
         matches!(self.state, CircuitState::Closed)
@@ -235,7 +242,7 @@ mod tests {
             reset_timeout: Duration::from_secs(60),
             half_open_max_requests: 2,
         };
-        
+
         let breaker = CircuitBreaker::new(config);
         assert_eq!(breaker.get_state(), CircuitState::Closed);
         assert!(breaker.can_execute());
@@ -248,13 +255,13 @@ mod tests {
             reset_timeout: Duration::from_secs(60),
             half_open_max_requests: 2,
         };
-        
+
         let breaker = CircuitBreaker::new(config);
-        
+
         // First failure - should remain closed
         breaker.record_failure();
         assert_eq!(breaker.get_state(), CircuitState::Closed);
-        
+
         // Second failure - should transition to open
         breaker.record_failure();
         assert_eq!(breaker.get_state(), CircuitState::Open);
@@ -268,13 +275,13 @@ mod tests {
             reset_timeout: Duration::from_secs(60),
             half_open_max_requests: 2,
         };
-        
+
         let breaker = CircuitBreaker::new(config);
-        
+
         // Record some failures
         breaker.record_failure();
         breaker.record_failure();
-        
+
         // Success should reset failure count
         breaker.record_success();
         let metrics = breaker.get_metrics();
@@ -289,13 +296,13 @@ mod tests {
             reset_timeout: Duration::from_secs(60),
             half_open_max_requests: 2,
         };
-        
+
         let breaker = CircuitBreaker::new(config);
-        
+
         breaker.record_success();
         breaker.record_success();
         breaker.record_failure();
-        
+
         let metrics = breaker.get_metrics();
         assert_eq!(metrics.success_count, 2);
         assert_eq!(metrics.failure_count, 1);

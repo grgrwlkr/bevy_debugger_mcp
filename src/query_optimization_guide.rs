@@ -75,8 +75,8 @@
 //! }
 //! ```
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Best practices for Bevy ECS query optimization
 #[derive(Debug, Clone, Serialize)]
@@ -136,9 +136,9 @@ pub struct ProfilingTip {
 
 #[derive(Debug, Clone, Serialize)]
 pub enum ImpactLevel {
-    Low,    // <2x improvement
-    Medium, // 2-5x improvement
-    High,   // 5-10x improvement
+    Low,      // <2x improvement
+    Medium,   // 2-5x improvement
+    High,     // 5-10x improvement
     Critical, // >10x improvement
 }
 
@@ -365,7 +365,11 @@ for parent in parents {
     }
 
     /// Get optimization recommendations for a specific scenario
-    pub fn get_recommendations(&self, entity_count: usize, query_complexity: QueryComplexity) -> OptimizationRecommendation {
+    pub fn get_recommendations(
+        &self,
+        entity_count: usize,
+        query_complexity: QueryComplexity,
+    ) -> OptimizationRecommendation {
         let should_use_parallel = entity_count >= 1000;
         let batch_size = match query_complexity {
             QueryComplexity::Simple => 64,
@@ -418,24 +422,31 @@ for parent in parents {
     }
 
     /// Generate a performance audit report
-    pub fn audit_performance(&self, metrics: &[crate::query_optimization::QueryPerformanceMetrics]) -> PerformanceAudit {
+    pub fn audit_performance(
+        &self,
+        metrics: &[crate::query_optimization::QueryPerformanceMetrics],
+    ) -> PerformanceAudit {
         if metrics.is_empty() {
             return PerformanceAudit::empty();
         }
 
-        let avg_execution_time = metrics.iter()
+        let avg_execution_time = metrics
+            .iter()
             .map(|m| m.execution_time_ms as f64)
-            .sum::<f64>() / metrics.len() as f64;
+            .sum::<f64>()
+            / metrics.len() as f64;
 
-        let parallel_usage_rate = metrics.iter()
-            .filter(|m| m.parallel_processing)
-            .count() as f64 / metrics.len() as f64;
+        let parallel_usage_rate =
+            metrics.iter().filter(|m| m.parallel_processing).count() as f64 / metrics.len() as f64;
 
-        let cache_hit_rate = metrics.iter()
-            .filter(|m| m.cache_hit)
-            .count() as f64 / metrics.len() as f64;
+        let cache_hit_rate =
+            metrics.iter().filter(|m| m.cache_hit).count() as f64 / metrics.len() as f64;
 
-        let issues = self.identify_performance_issues(avg_execution_time, parallel_usage_rate, cache_hit_rate);
+        let issues = self.identify_performance_issues(
+            avg_execution_time,
+            parallel_usage_rate,
+            cache_hit_rate,
+        );
         let recommendations = self.generate_audit_recommendations(&issues);
 
         PerformanceAudit {
@@ -444,11 +455,20 @@ for parent in parents {
             cache_hit_rate,
             identified_issues: issues,
             recommendations,
-            overall_score: self.calculate_performance_score(avg_execution_time, parallel_usage_rate, cache_hit_rate),
+            overall_score: self.calculate_performance_score(
+                avg_execution_time,
+                parallel_usage_rate,
+                cache_hit_rate,
+            ),
         }
     }
 
-    fn identify_performance_issues(&self, avg_time: f64, parallel_rate: f64, cache_rate: f64) -> Vec<String> {
+    fn identify_performance_issues(
+        &self,
+        avg_time: f64,
+        parallel_rate: f64,
+        cache_rate: f64,
+    ) -> Vec<String> {
         let mut issues = Vec::new();
 
         if avg_time > 50.0 {
@@ -470,16 +490,21 @@ for parent in parents {
         for issue in issues {
             match issue.as_str() {
                 "High average execution time" => {
-                    recommendations.push("Consider using parallel processing for large queries".to_string());
-                    recommendations.push("Review query complexity and component combinations".to_string());
+                    recommendations
+                        .push("Consider using parallel processing for large queries".to_string());
+                    recommendations
+                        .push("Review query complexity and component combinations".to_string());
                 }
                 "Low parallel processing usage" => {
-                    recommendations.push("Enable parallel processing for queries with >1000 entities".to_string());
+                    recommendations.push(
+                        "Enable parallel processing for queries with >1000 entities".to_string(),
+                    );
                     recommendations.push("Tune batch sizes for optimal performance".to_string());
                 }
                 "Poor cache hit rate" => {
                     recommendations.push("Increase QueryOptimizer cache size".to_string());
-                    recommendations.push("Review query patterns for caching opportunities".to_string());
+                    recommendations
+                        .push("Review query patterns for caching opportunities".to_string());
                 }
                 _ => {}
             }
@@ -488,7 +513,12 @@ for parent in parents {
         recommendations
     }
 
-    fn calculate_performance_score(&self, avg_time: f64, parallel_rate: f64, cache_rate: f64) -> f64 {
+    fn calculate_performance_score(
+        &self,
+        avg_time: f64,
+        parallel_rate: f64,
+        cache_rate: f64,
+    ) -> f64 {
         let time_score = (100.0 - avg_time.min(100.0)) / 100.0;
         let parallel_score = parallel_rate;
         let cache_score = cache_rate;

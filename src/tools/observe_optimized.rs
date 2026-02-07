@@ -20,14 +20,16 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::brp_client::BrpClient;
 use crate::brp_messages::{BrpResponse, BrpResult, EntityData};
 use crate::error::{Error, Result};
-use crate::query_parser::{QueryCache, QueryMetrics, QueryParser, RegexQueryParser};
+use crate::parallel_query_executor::{
+    ParallelExecutionConfig, ParallelQueryExecutor, QueryExecutionResult,
+};
 use crate::query_optimization::{QueryOptimizer, QueryPerformanceMetrics};
-use crate::parallel_query_executor::{ParallelQueryExecutor, ParallelExecutionConfig, QueryExecutionResult};
+use crate::query_parser::{QueryCache, QueryMetrics, QueryParser, RegexQueryParser};
 use crate::state_diff::{FuzzyCompareConfig, GameRules, StateDiff, StateDiffResult, StateSnapshot};
 
 /// Optimized observe state with performance tracking
@@ -46,7 +48,7 @@ pub struct OptimizedObserveState {
 
 impl OptimizedObserveState {
     /// Create new optimized observe state
-    /// 
+    ///
     /// # Errors
     /// Returns error if initialization fails
     pub fn new() -> Result<Self> {
@@ -76,7 +78,7 @@ impl OptimizedObserveState {
     }
 
     /// Create with custom configuration
-    /// 
+    ///
     /// # Errors
     /// Returns error if initialization fails
     pub fn with_config(
@@ -121,15 +123,22 @@ impl OptimizedObserveState {
         }
 
         let total_queries = self.performance_metrics.len();
-        let parallel_queries = self.performance_metrics.iter()
+        let parallel_queries = self
+            .performance_metrics
+            .iter()
             .filter(|m| m.parallel_processing)
             .count();
-        
-        let avg_execution_time = self.performance_metrics.iter()
-            .map(|m| m.execution_time_ms as f64)
-            .sum::<f64>() / total_queries as f64;
 
-        let cache_hits = self.performance_metrics.iter()
+        let avg_execution_time = self
+            .performance_metrics
+            .iter()
+            .map(|m| m.execution_time_ms as f64)
+            .sum::<f64>()
+            / total_queries as f64;
+
+        let cache_hits = self
+            .performance_metrics
+            .iter()
             .filter(|m| m.cache_hit)
             .count();
         let cache_hit_rate = cache_hits as f64 / total_queries as f64;
@@ -173,13 +182,16 @@ impl OptimizedObserveState {
 }
 
 // Global optimized observe state
-static OPTIMIZED_OBSERVE_STATE: std::sync::OnceLock<Arc<RwLock<OptimizedObserveState>>> = std::sync::OnceLock::new();
+static OPTIMIZED_OBSERVE_STATE: std::sync::OnceLock<Arc<RwLock<OptimizedObserveState>>> =
+    std::sync::OnceLock::new();
 
 fn get_optimized_observe_state() -> Arc<RwLock<OptimizedObserveState>> {
     OPTIMIZED_OBSERVE_STATE
-        .get_or_init(|| Arc::new(RwLock::new(
-            OptimizedObserveState::new().expect("Default optimized observe state should initialize successfully")
-        )))
+        .get_or_init(|| {
+            Arc::new(RwLock::new(OptimizedObserveState::new().expect(
+                "Default optimized observe state should initialize successfully",
+            )))
+        })
         .clone()
 }
 
@@ -188,8 +200,14 @@ fn get_optimized_observe_state() -> Arc<RwLock<OptimizedObserveState>> {
 /// # Errors
 /// Returns error if query parsing fails, BRP communication fails, or response formatting fails
 #[instrument(skip(brp_client), fields(query = %arguments.get("query").and_then(|q| q.as_str()).unwrap_or("unknown")))]
-pub async fn handle_optimized(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
-    debug!("Optimized observe tool called with arguments: {}", arguments);
+pub async fn handle_optimized(
+    arguments: Value,
+    brp_client: Arc<RwLock<BrpClient>>,
+) -> Result<Value> {
+    debug!(
+        "Optimized observe tool called with arguments: {}",
+        arguments
+    );
 
     let query = arguments
         .get("query")
@@ -227,7 +245,7 @@ pub async fn handle_optimized(arguments: Value, brp_client: Arc<RwLock<BrpClient
 
     let (brp_request, semantic_info) = {
         let state_guard = state.read().await;
-        
+
         // Check cache first (skip cache for diff mode)
         if !diff_mode {
             if let Some((cached_result, entity_count)) = state_guard.cache.get(query) {
@@ -258,22 +276,23 @@ pub async fn handle_optimized(arguments: Value, brp_client: Arc<RwLock<BrpClient
         // Parse query
         match state_guard.parser.parse_semantic(query) {
             Ok(semantic_result) => {
-                info!("Parsed as semantic query with {} explanations", semantic_result.explanations.len());
+                info!(
+                    "Parsed as semantic query with {} explanations",
+                    semantic_result.explanations.len()
+                );
                 (semantic_result.request.clone(), Some(semantic_result))
             }
-            Err(_) => {
-                match state_guard.parser.parse(query) {
-                    Ok(request) => (request, None),
-                    Err(e) => {
-                        warn!("Query parsing failed: {}", e);
-                        return Ok(json!({
-                            "error": "Query parsing failed",
-                            "message": e.to_string(),
-                            "help": state_guard.parser.help()
-                        }));
-                    }
+            Err(_) => match state_guard.parser.parse(query) {
+                Ok(request) => (request, None),
+                Err(e) => {
+                    warn!("Query parsing failed: {}", e);
+                    return Ok(json!({
+                        "error": "Query parsing failed",
+                        "message": e.to_string(),
+                        "help": state_guard.parser.help()
+                    }));
                 }
-            }
+            },
         }
     };
 
@@ -295,12 +314,26 @@ pub async fn handle_optimized(arguments: Value, brp_client: Arc<RwLock<BrpClient
     // Optimize query for performance
     let optimized_query = {
         let state_guard = state.read().await;
-        match state_guard.query_optimizer.optimize_request(&brp_request).await {
+        match state_guard
+            .query_optimizer
+            .optimize_request(&brp_request)
+            .await
+        {
             Ok(optimized) => optimized,
             Err(e) => {
-                warn!("Query optimization failed, falling back to standard execution: {}", e);
+                warn!(
+                    "Query optimization failed, falling back to standard execution: {}",
+                    e
+                );
                 // Continue with standard execution
-                return execute_fallback_query(&brp_request, brp_client, query, start_time, diff_mode).await;
+                return execute_fallback_query(
+                    &brp_request,
+                    brp_client,
+                    query,
+                    start_time,
+                    diff_mode,
+                )
+                .await;
             }
         }
     };
@@ -308,24 +341,38 @@ pub async fn handle_optimized(arguments: Value, brp_client: Arc<RwLock<BrpClient
     // Execute optimized query
     let execution_result = {
         let state_guard = state.read().await;
-        match state_guard.parallel_executor.execute_query(&optimized_query, brp_client.clone()).await {
+        match state_guard
+            .parallel_executor
+            .execute_query(&optimized_query, brp_client.clone())
+            .await
+        {
             Ok(result) => result,
             Err(e) => {
                 error!("Optimized query execution failed: {}", e);
-                return execute_fallback_query(&brp_request, brp_client, query, start_time, diff_mode).await;
+                return execute_fallback_query(
+                    &brp_request,
+                    brp_client,
+                    query,
+                    start_time,
+                    diff_mode,
+                )
+                .await;
             }
         }
     };
 
     // Record performance metrics
     let performance_metrics = execution_result.to_performance_metrics(query.to_string());
-    
+
     {
         let mut state_guard = state.write().await;
         state_guard.record_metrics(performance_metrics.clone());
-        
+
         // Record in query optimizer for continuous improvement
-        let _ = state_guard.query_optimizer.record_execution_metrics(performance_metrics.clone()).await;
+        let _ = state_guard
+            .query_optimizer
+            .record_execution_metrics(performance_metrics.clone())
+            .await;
     }
 
     // Handle diff mode
@@ -341,7 +388,11 @@ pub async fn handle_optimized(arguments: Value, brp_client: Arc<RwLock<BrpClient
     if optimized_query.should_cache_results() && !diff_mode {
         let state_guard = state.read().await;
         let result_json = serde_json::to_value(&execution_result.entities).map_err(Error::Json)?;
-        state_guard.cache.set(query.to_string(), result_json.clone(), execution_result.entity_count);
+        state_guard.cache.set(
+            query.to_string(),
+            result_json.clone(),
+            execution_result.entity_count,
+        );
     }
 
     // Build response
@@ -421,7 +472,7 @@ async fn execute_fallback_query(
     diff_mode: bool,
 ) -> Result<Value> {
     warn!("Falling back to standard query execution");
-    
+
     let brp_response = {
         let mut client = brp_client.write().await;
         match client.send_request(brp_request).await {
@@ -505,7 +556,7 @@ mod tests {
     #[tokio::test]
     async fn test_performance_stats() {
         let mut state = OptimizedObserveState::new().unwrap();
-        
+
         let metrics = QueryPerformanceMetrics {
             query_id: "test_query".to_string(),
             query: "list all entities".to_string(),
@@ -523,10 +574,10 @@ mod tests {
                 parallel_friendly: true,
             },
         };
-        
+
         state.record_metrics(metrics);
         let stats = state.get_performance_stats();
-        
+
         assert_eq!(stats["total_queries"], 1);
         assert_eq!(stats["parallel_queries"], 1);
     }

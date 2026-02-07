@@ -17,12 +17,12 @@ use opentelemetry_sdk::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
 use crate::config::Config;
-use crate::error::{Result, Error};
+use crate::error::{Error, Result};
 
 /// Distributed tracing service using OpenTelemetry
 pub struct TracingService {
@@ -35,14 +35,14 @@ impl TracingService {
     /// Create a new tracing service
     pub async fn new(config: &Config) -> Result<Self> {
         let tracer = Self::init_tracer(config).await?;
-        
+
         Ok(Self {
             config: config.clone(),
             tracer: Arc::new(tracer),
             is_initialized: false,
         })
     }
-    
+
     /// Initialize OpenTelemetry tracer with Jaeger export
     async fn init_tracer(config: &Config) -> Result<Box<dyn Tracer + Send + Sync>> {
         info!("Initializing OpenTelemetry tracing with Jaeger export");
@@ -58,7 +58,7 @@ impl TracingService {
         // For now, use a simple in-memory tracer for development
         // TODO: Add proper Jaeger/OTLP configuration when compatible versions are available
         info!("Initializing basic OpenTelemetry tracer");
-        
+
         let tracer_provider = opentelemetry_sdk::trace::TracerProvider::builder()
             .with_config(
                 trace::config()
@@ -67,12 +67,12 @@ impl TracingService {
                     .with_resource(resource),
             )
             .build();
-        
+
         let tracer = tracer_provider.tracer("bevy-debugger-mcp");
 
         Ok(Box::new(tracer))
     }
-    
+
     /// Start the tracing service
     pub async fn start(&self) -> Result<()> {
         if self.is_initialized {
@@ -84,7 +84,7 @@ impl TracingService {
 
         // Set up tracing subscriber with OpenTelemetry layer
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(self.tracer.clone());
-        
+
         // Combine with existing tracing setup
         let subscriber = Registry::default()
             .with(EnvFilter::from_default_env())
@@ -93,59 +93,62 @@ impl TracingService {
 
         // Only set global subscriber if not already set
         if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
-            warn!("Could not set global tracing subscriber (may already be set): {}", e);
+            warn!(
+                "Could not set global tracing subscriber (may already be set): {}",
+                e
+            );
         }
 
         info!("Distributed tracing service started");
         Ok(())
     }
-    
+
     /// Shutdown the tracing service
     pub async fn shutdown(&self) -> Result<()> {
         info!("Shutting down tracing service");
-        
+
         // Flush any remaining spans
         global::shutdown_tracer_provider();
-        
+
         info!("Tracing service shutdown complete");
         Ok(())
     }
-    
+
     /// Create a new trace span for MCP operation
     pub fn create_mcp_span(&self, operation: &str, tool_name: Option<&str>) -> TraceSpan {
         let mut attributes = vec![
             KeyValue::new("mcp.operation", operation.to_string()),
             KeyValue::new("service.name", "bevy-debugger-mcp"),
         ];
-        
+
         if let Some(tool) = tool_name {
             attributes.push(KeyValue::new("mcp.tool", tool.to_string()));
         }
-        
+
         TraceSpan::new(&self.tracer, operation, attributes)
     }
-    
+
     /// Create a new trace span for BRP operation  
     pub fn create_brp_span(&self, operation: &str, entity_count: Option<u64>) -> TraceSpan {
         let mut attributes = vec![
             KeyValue::new("brp.operation", operation.to_string()),
             KeyValue::new("service.name", "bevy-debugger-mcp"),
         ];
-        
+
         if let Some(count) = entity_count {
             attributes.push(KeyValue::new("brp.entity_count", count.to_string()));
         }
-        
+
         TraceSpan::new(&self.tracer, &format!("brp.{}", operation), attributes)
     }
-    
+
     /// Create a new trace span for system operation
     pub fn create_system_span(&self, operation: &str) -> TraceSpan {
         let attributes = vec![
             KeyValue::new("system.operation", operation.to_string()),
             KeyValue::new("service.name", "bevy-debugger-mcp"),
         ];
-        
+
         TraceSpan::new(&self.tracer, &format!("system.{}", operation), attributes)
     }
 }
@@ -161,42 +164,45 @@ impl TraceSpan {
             .span_builder(name)
             .with_attributes(attributes)
             .start(tracer);
-            
+
         Self { span }
     }
-    
+
     /// Add an attribute to the span
     pub fn set_attribute(&mut self, key: &str, value: &str) {
-        self.span.set_attribute(KeyValue::new(key, value.to_string()));
+        self.span
+            .set_attribute(KeyValue::new(key, value.to_string()));
     }
-    
+
     /// Add multiple attributes to the span
     pub fn set_attributes(&mut self, attributes: Vec<(&str, &str)>) {
         for (key, value) in attributes {
-            self.span.set_attribute(KeyValue::new(key, value.to_string()));
+            self.span
+                .set_attribute(KeyValue::new(key, value.to_string()));
         }
     }
-    
+
     /// Record an event in the span
     pub fn add_event(&mut self, name: &str, attributes: Vec<(&str, &str)>) {
         let kv_attributes: Vec<KeyValue> = attributes
             .into_iter()
             .map(|(k, v)| KeyValue::new(k, v.to_string()))
             .collect();
-            
+
         self.span.add_event(name, kv_attributes);
     }
-    
+
     /// Record an error in the span
     pub fn record_error(&mut self, error: &dyn std::error::Error) {
         self.span.set_status(opentelemetry::trace::Status::Error {
             description: error.to_string().into(),
         });
-        
+
         self.span.set_attribute(KeyValue::new("error", true));
-        self.span.set_attribute(KeyValue::new("error.message", error.to_string()));
+        self.span
+            .set_attribute(KeyValue::new("error.message", error.to_string()));
     }
-    
+
     /// Mark span as successful
     pub fn set_success(&mut self) {
         self.span.set_status(opentelemetry::trace::Status::Ok);
@@ -268,21 +274,21 @@ mod tests {
         let tracing_service = TracingService::new(&config).await;
         assert!(tracing_service.is_ok());
     }
-    
-    #[tokio::test] 
+
+    #[tokio::test]
     async fn test_span_creation() {
         let config = Config::default();
         let tracing_service = TracingService::new(&config).await.unwrap();
-        
+
         let mut span = tracing_service.create_mcp_span("test_operation", Some("observe"));
         span.set_attribute("test_attr", "test_value");
         span.add_event("test_event", vec![("key", "value")]);
         span.set_success();
-        
+
         // Span should drop and complete automatically
         drop(span);
     }
-    
+
     #[test]
     fn test_tracing_config() {
         let config = TracingConfig::default();

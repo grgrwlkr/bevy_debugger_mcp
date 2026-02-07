@@ -28,10 +28,12 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::bevy_reflection::inspector::{BevyReflectionInspector, ReflectionMetadata, TypeCategory};
-use crate::bevy_reflection::type_registry_tools::{TypeRegistryManager, TypeQuery};
-use crate::brp_messages::{BrpRequest, EntityData, ComponentValue};
+use crate::bevy_reflection::inspector::{
+    BevyReflectionInspector, ReflectionMetadata, TypeCategory,
+};
+use crate::bevy_reflection::type_registry_tools::{TypeQuery, TypeRegistryManager};
 use crate::brp_client::BrpClient;
+use crate::brp_messages::{BrpRequest, ComponentValue, EntityData};
 use crate::error::{Error, Result};
 
 /// Enhanced query system using reflection
@@ -259,29 +261,37 @@ impl ReflectionQueryEngine {
         // Check cache first
         if let Some(cached_result) = self.get_cached_result(&query.base_query).await {
             info!("Query cache hit for: {}", query.base_query);
-            self.update_stats(true, start_time.elapsed().as_millis() as u64).await;
+            self.update_stats(true, start_time.elapsed().as_millis() as u64)
+                .await;
             return Ok(cached_result);
         }
 
         // Execute base query through BRP
-        let base_entities = self.execute_base_query(&query.base_query, brp_client).await?;
-        
+        let base_entities = self
+            .execute_base_query(&query.base_query, brp_client)
+            .await?;
+
         // Enhance with reflection data
-        let reflected_entities = self.enhance_entities_with_reflection(
-            base_entities,
-            &query.reflection_params,
-            &query.limits,
-        ).await?;
+        let reflected_entities = self
+            .enhance_entities_with_reflection(
+                base_entities,
+                &query.reflection_params,
+                &query.limits,
+            )
+            .await?;
 
         // Discover types if requested
         let discovered_types = if query.reflection_params.include_type_discovery {
-            self.discover_types_from_entities(&reflected_entities).await?
+            self.discover_types_from_entities(&reflected_entities)
+                .await?
         } else {
             HashMap::new()
         };
 
         // Generate suggestions
-        let suggestions = self.generate_query_suggestions(&query, &reflected_entities).await;
+        let suggestions = self
+            .generate_query_suggestions(&query, &reflected_entities)
+            .await;
 
         let execution_time = start_time.elapsed().as_millis() as u64;
         let result = ReflectionQueryResult {
@@ -291,7 +301,8 @@ impl ReflectionQueryEngine {
                 execution_time_ms: execution_time,
                 from_cache: false,
                 entities_processed: reflected_entities.len(),
-                components_inspected: reflected_entities.iter()
+                components_inspected: reflected_entities
+                    .iter()
                     .map(|e| e.reflected_components.len())
                     .sum(),
                 types_discovered: discovered_types.len(),
@@ -319,12 +330,12 @@ impl ReflectionQueryEngine {
         // This would integrate with the existing query parser
         // For now, we'll simulate a basic query execution
         let mut client = brp_client.write().await;
-        
+
         // Parse the query and convert to BRP request
         let brp_request = self.parse_query_to_brp(query)?;
-        
+
         let response = client.send_request(&brp_request).await?;
-        
+
         // Extract entities from response
         match response {
             crate::brp_messages::BrpResponse::Success(result) => {
@@ -363,7 +374,10 @@ impl ReflectionQueryEngine {
 
         for entity in entities {
             if processed_count >= limits.max_entities {
-                warn!("Query limit reached: max_entities = {}", limits.max_entities);
+                warn!(
+                    "Query limit reached: max_entities = {}",
+                    limits.max_entities
+                );
                 break;
             }
 
@@ -392,7 +406,9 @@ impl ReflectionQueryEngine {
 
             // Apply component type filters
             if !params.component_type_filters.is_empty() {
-                let matches_filter = params.component_type_filters.iter()
+                let matches_filter = params
+                    .component_type_filters
+                    .iter()
                     .any(|filter| component_type.contains(filter));
                 if !matches_filter {
                     continue;
@@ -400,10 +416,14 @@ impl ReflectionQueryEngine {
             }
 
             let start_inspection = std::time::Instant::now();
-            
+
             // Perform reflection inspection if requested
             let inspection = if params.include_reflection {
-                Some(self.reflection_inspector.inspect_component(component_type, component_value).await?)
+                Some(
+                    self.reflection_inspector
+                        .inspect_component(component_type, component_value)
+                        .await?,
+                )
             } else {
                 None
             };
@@ -421,26 +441,34 @@ impl ReflectionQueryEngine {
 
             // Build relationships if requested
             let relationships = if params.include_relationships {
-                Some(self.analyze_component_relationships(component_type, &entity).await)
+                Some(
+                    self.analyze_component_relationships(component_type, &entity)
+                        .await,
+                )
             } else {
                 None
             };
 
             if let Some(inspection) = inspection {
-                reflected_components.insert(component_type.clone(), ReflectedComponentData {
-                    type_name: component_type.clone(),
-                    raw_value: component_value.clone(),
-                    inspection,
-                    relationships,
-                    metrics,
-                });
+                reflected_components.insert(
+                    component_type.clone(),
+                    ReflectedComponentData {
+                        type_name: component_type.clone(),
+                        raw_value: component_value.clone(),
+                        inspection,
+                        relationships,
+                        metrics,
+                    },
+                );
             }
 
             component_count += 1;
         }
 
         // Build entity metadata
-        let entity_metadata = self.build_entity_metadata(&entity, &reflected_components).await;
+        let entity_metadata = self
+            .build_entity_metadata(&entity, &reflected_components)
+            .await;
 
         Ok(ReflectedEntityData {
             entity,
@@ -463,8 +491,13 @@ impl ReflectionQueryEngine {
         match component_type {
             "bevy_transform::components::transform::Transform" => {
                 // GlobalTransform depends on Transform
-                if entity.components.contains_key("bevy_transform::components::global_transform::GlobalTransform") {
-                    dependents.push("bevy_transform::components::global_transform::GlobalTransform".to_string());
+                if entity
+                    .components
+                    .contains_key("bevy_transform::components::global_transform::GlobalTransform")
+                {
+                    dependents.push(
+                        "bevy_transform::components::global_transform::GlobalTransform".to_string(),
+                    );
                 }
                 // Many rendering components depend on Transform
                 for comp_type in entity.components.keys() {
@@ -475,7 +508,10 @@ impl ReflectionQueryEngine {
             }
             "bevy_hierarchy::components::parent::Parent" => {
                 // Parent conflicts with being a root entity in some contexts
-                if entity.components.contains_key("bevy_hierarchy::components::children::Children") {
+                if entity
+                    .components
+                    .contains_key("bevy_hierarchy::components::children::Children")
+                {
                     // Entity can be both parent and child
                 }
             }
@@ -496,24 +532,39 @@ impl ReflectionQueryEngine {
         reflected_components: &HashMap<String, ReflectedComponentData>,
     ) -> ReflectedEntityMetadata {
         let archetype_signature: Vec<String> = entity.components.keys().cloned().collect();
-        
-        let memory_usage_bytes = reflected_components.values()
+
+        let memory_usage_bytes = reflected_components
+            .values()
             .map(|comp| comp.metrics.serialized_size)
             .sum();
 
-        let has_hierarchy = entity.components.keys()
-            .any(|k| k.contains("parent") || k.contains("children") || k.contains("Parent") || k.contains("Children"));
+        let has_hierarchy = entity.components.keys().any(|k| {
+            k.contains("parent")
+                || k.contains("children")
+                || k.contains("Parent")
+                || k.contains("Children")
+        });
 
-        let has_spatial = entity.components.keys()
+        let has_spatial = entity
+            .components
+            .keys()
             .any(|k| k.contains("transform") || k.contains("Transform"));
 
-        let has_rendering = entity.components.keys()
+        let has_rendering = entity
+            .components
+            .keys()
             .any(|k| k.contains("sprite") || k.contains("mesh") || k.contains("material"));
 
         let mut classifications = Vec::new();
-        if has_hierarchy { classifications.push("Hierarchical".to_string()); }
-        if has_spatial { classifications.push("Spatial".to_string()); }
-        if has_rendering { classifications.push("Renderable".to_string()); }
+        if has_hierarchy {
+            classifications.push("Hierarchical".to_string());
+        }
+        if has_spatial {
+            classifications.push("Spatial".to_string());
+        }
+        if has_rendering {
+            classifications.push("Renderable".to_string());
+        }
 
         ReflectedEntityMetadata {
             archetype_signature,
@@ -538,14 +589,16 @@ impl ReflectionQueryEngine {
             Value::Array(arr) => {
                 complexity = 0.6 + (arr.len() as f64 / 100.0).min(0.3);
                 // Add complexity for nested structures
-                for item in arr.iter().take(10) { // Sample first 10 items
+                for item in arr.iter().take(10) {
+                    // Sample first 10 items
                     complexity += Box::pin(self.calculate_component_complexity(item)).await * 0.1;
                 }
             }
             Value::Object(obj) => {
                 complexity = 0.7 + (obj.len() as f64 / 50.0).min(0.2);
                 // Add complexity for nested structures
-                for value in obj.values().take(10) { // Sample first 10 fields
+                for value in obj.values().take(10) {
+                    // Sample first 10 fields
                     complexity += Box::pin(self.calculate_component_complexity(value)).await * 0.1;
                 }
             }
@@ -585,19 +638,27 @@ impl ReflectionQueryEngine {
 
         // Analyze query patterns
         if entities.is_empty() {
-            suggestions.push("No entities matched your query. Try broadening the search criteria.".to_string());
+            suggestions.push(
+                "No entities matched your query. Try broadening the search criteria.".to_string(),
+            );
         } else if entities.len() > 100 {
-            suggestions.push("Large result set returned. Consider adding filters to narrow results.".to_string());
+            suggestions.push(
+                "Large result set returned. Consider adding filters to narrow results.".to_string(),
+            );
         }
 
         // Suggest reflection enhancements
         if !query.reflection_params.include_reflection {
-            suggestions.push("Enable reflection inspection to get detailed component analysis.".to_string());
+            suggestions.push(
+                "Enable reflection inspection to get detailed component analysis.".to_string(),
+            );
         }
 
         // Suggest type discovery
         if !query.reflection_params.include_type_discovery {
-            suggestions.push("Enable type discovery to learn about available component types.".to_string());
+            suggestions.push(
+                "Enable type discovery to learn about available component types.".to_string(),
+            );
         }
 
         suggestions
@@ -638,33 +699,37 @@ impl ReflectionQueryEngine {
     /// Cache query result
     async fn cache_result(&self, query: &str, result: &ReflectionQueryResult) {
         let mut cache = self.query_cache.write().await;
-        
+
         // Clean old entries if cache is getting large
         if cache.len() > 1000 {
             let cutoff = chrono::Utc::now().timestamp_micros() as u64 - 3600 * 1_000_000; // 1 hour
             cache.retain(|_, cached| cached.cached_at > cutoff);
         }
 
-        cache.insert(query.to_string(), CachedQueryResult {
-            result: result.clone(),
-            cached_at: chrono::Utc::now().timestamp_micros() as u64,
-            ttl_seconds: 300, // 5 minutes
-            hit_count: 0,
-        });
+        cache.insert(
+            query.to_string(),
+            CachedQueryResult {
+                result: result.clone(),
+                cached_at: chrono::Utc::now().timestamp_micros() as u64,
+                ttl_seconds: 300, // 5 minutes
+                hit_count: 0,
+            },
+        );
     }
 
     /// Update query statistics
     async fn update_stats(&self, cache_hit: bool, execution_time_ms: u64) {
         let mut stats = self.stats.write().await;
         stats.total_queries += 1;
-        
+
         if cache_hit {
             stats.cache_hits += 1;
         }
 
         // Update rolling average execution time
         let total_time = stats.avg_execution_time_ms * (stats.total_queries - 1) as f64;
-        stats.avg_execution_time_ms = (total_time + execution_time_ms as f64) / stats.total_queries as f64;
+        stats.avg_execution_time_ms =
+            (total_time + execution_time_ms as f64) / stats.total_queries as f64;
     }
 
     /// Get query statistics
@@ -720,7 +785,7 @@ mod tests {
     async fn test_reflection_query_engine_creation() {
         let engine = ReflectionQueryEngine::new();
         let stats = engine.get_stats().await;
-        
+
         assert_eq!(stats.total_queries, 0);
         assert_eq!(stats.cache_hits, 0);
     }
@@ -728,11 +793,11 @@ mod tests {
     #[tokio::test]
     async fn test_component_complexity_calculation() {
         let engine = ReflectionQueryEngine::new();
-        
+
         // Simple values
         assert!(engine.calculate_component_complexity(&json!(42)).await < 0.5);
         assert!(engine.calculate_component_complexity(&json!("hello")).await < 0.5);
-        
+
         // Complex object
         let complex_obj = json!({
             "field1": "value1",
@@ -751,7 +816,7 @@ mod tests {
             operation: FilterOperation::GreaterThan,
             value: json!(10.0),
         };
-        
+
         assert_eq!(filter.component_type, "Transform");
         assert_eq!(filter.field_path, "translation.x");
     }
@@ -759,7 +824,7 @@ mod tests {
     #[test]
     fn test_query_limits() {
         let limits = QueryLimits::default();
-        
+
         assert_eq!(limits.max_entities, 1000);
         assert_eq!(limits.max_execution_time_ms, 30000);
     }

@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::resource_manager::ObjectPool;
 use crate::brp_messages::{BrpRequest, BrpResponse, BrpResult, ComponentFilter, QueryFilter};
 use crate::error::Result;
+use crate::resource_manager::ObjectPool;
 
 /// Specialized memory pools for frequently allocated game debugging objects
 pub struct GameDebugPools {
@@ -31,36 +31,42 @@ impl GameDebugPools {
     pub fn new() -> Self {
         Self {
             brp_request_pool: ObjectPool::new(
-                Box::new(|| Box::new(BrpRequest::Query { 
-                    filter: None,
-                    limit: None,
-                    strict: Some(false)
-                })),
-                50 // Max 50 concurrent requests
+                Box::new(|| {
+                    Box::new(BrpRequest::Query {
+                        filter: None,
+                        limit: None,
+                        strict: Some(false),
+                    })
+                }),
+                50, // Max 50 concurrent requests
             ),
             brp_response_pool: ObjectPool::new(
-                Box::new(|| Box::new(BrpResponse::Success(Box::new(BrpResult::Entities(Vec::new()))))),
-                50 // Max 50 concurrent responses
+                Box::new(|| {
+                    Box::new(BrpResponse::Success(Box::new(BrpResult::Entities(
+                        Vec::new(),
+                    ))))
+                }),
+                50, // Max 50 concurrent responses
             ),
             component_filter_pool: ObjectPool::new(
                 Box::new(|| Vec::with_capacity(8)),
-                100 // Filter vectors are commonly reused
+                100, // Filter vectors are commonly reused
             ),
             string_vec_pool: ObjectPool::new(
                 Box::new(|| Vec::with_capacity(16)),
-                200 // String vectors for component names, etc.
+                200, // String vectors for component names, etc.
             ),
             json_value_pool: ObjectPool::new(
                 Box::new(|| Value::Null),
-                500 // JSON values are very common
+                500, // JSON values are very common
             ),
             hashmap_pool: ObjectPool::new(
                 Box::new(|| HashMap::with_capacity(32)),
-                100 // Component data hashmaps
+                100, // Component data hashmaps
             ),
             query_result_pool: ObjectPool::new(
                 Box::new(|| Vec::with_capacity(64)),
-                50 // Query result vectors
+                50, // Query result vectors
             ),
         }
     }
@@ -68,14 +74,14 @@ impl GameDebugPools {
     /// Get a pooled BRP request, resetting it for reuse
     pub async fn get_brp_request(&self) -> Box<BrpRequest> {
         let mut request = self.brp_request_pool.acquire().await;
-        
+
         // Reset the request to default state
-        *request = BrpRequest::Query { 
+        *request = BrpRequest::Query {
             filter: None,
             limit: None,
-            strict: Some(false) 
+            strict: Some(false),
         };
-        
+
         request
     }
 
@@ -87,10 +93,10 @@ impl GameDebugPools {
     /// Get a pooled BRP response, resetting it for reuse
     pub async fn get_brp_response(&self) -> Box<BrpResponse> {
         let mut response = self.brp_response_pool.acquire().await;
-        
+
         // Reset the response to default state
         *response = BrpResponse::Success(Box::new(BrpResult::Entities(Vec::new())));
-        
+
         response
     }
 
@@ -102,7 +108,7 @@ impl GameDebugPools {
     /// Get a pooled component filter vector, cleared for reuse
     pub async fn get_component_filters(&self) -> Vec<ComponentFilter> {
         let mut filters = self.component_filter_pool.acquire().await;
-        
+
         filters.clear();
         filters
     }
@@ -115,7 +121,7 @@ impl GameDebugPools {
     /// Get a pooled string vector, cleared for reuse
     pub async fn get_string_vec(&self) -> Vec<String> {
         let mut strings = self.string_vec_pool.acquire().await;
-        
+
         strings.clear();
         strings
     }
@@ -139,7 +145,7 @@ impl GameDebugPools {
     /// Get a pooled HashMap, cleared for reuse  
     pub async fn get_hashmap(&self) -> HashMap<String, Value> {
         let mut map = self.hashmap_pool.acquire().await;
-        
+
         map.clear();
         map
     }
@@ -152,7 +158,7 @@ impl GameDebugPools {
     /// Get a pooled query result vector, cleared for reuse
     pub async fn get_query_results(&self) -> Vec<Value> {
         let mut results = self.query_result_pool.acquire().await;
-        
+
         results.clear();
         results
     }
@@ -178,10 +184,10 @@ impl GameDebugPools {
     /// Warm up pools by pre-allocating objects
     pub async fn warm_up_pools(&self) {
         info!("Warming up memory pools for optimal game debugging performance");
-        
+
         // Pre-allocate common objects to reduce first-request latency
         let mut pre_allocated = Vec::new();
-        
+
         // Warm up BRP request pool
         for _ in 0..10 {
             pre_allocated.push(self.get_brp_request().await);
@@ -189,7 +195,7 @@ impl GameDebugPools {
         for req in pre_allocated.drain(..) {
             self.return_brp_request(req).await;
         }
-        
+
         // Warm up string vector pool
         let mut string_vecs = Vec::new();
         for _ in 0..20 {
@@ -198,7 +204,7 @@ impl GameDebugPools {
         for vec in string_vecs {
             self.return_string_vec(vec).await;
         }
-        
+
         // Warm up component filter pool
         let mut filters = Vec::new();
         for _ in 0..15 {
@@ -207,17 +213,17 @@ impl GameDebugPools {
         for filter in filters {
             self.return_component_filters(filter).await;
         }
-        
+
         info!("Memory pools warmed up successfully");
     }
 
     /// Clean up pools and shrink excessive capacity
     pub async fn cleanup_pools(&self) {
         info!("Cleaning up memory pools");
-        
+
         // Implementation would call cleanup methods on individual pools
         // This would be implemented once ObjectPool has cleanup methods
-        
+
         debug!("Pool cleanup completed");
     }
 }
@@ -269,7 +275,7 @@ impl PoolStats {
 }
 
 /// Global instance of the game debug pools
-pub static GAME_POOLS: once_cell::sync::Lazy<GameDebugPools> = 
+pub static GAME_POOLS: once_cell::sync::Lazy<GameDebugPools> =
     once_cell::sync::Lazy::new(|| GameDebugPools::new());
 
 /// Convenience macro for getting pooled objects with automatic return
@@ -337,20 +343,20 @@ mod tests {
     #[tokio::test]
     async fn test_game_debug_pools() {
         let pools = GameDebugPools::new();
-        
+
         // Test string vector pooling
         let mut strings = pools.get_string_vec().await;
         strings.push("Transform".to_string());
         strings.push("Velocity".to_string());
-        
+
         assert_eq!(strings.len(), 2);
         pools.return_string_vec(strings).await;
-        
+
         // Get another vector - should be cleared
         let strings2 = pools.get_string_vec().await;
         assert_eq!(strings2.len(), 0);
         pools.return_string_vec(strings2).await;
-        
+
         // Test pool stats
         let stats = pools.get_pool_stats().await;
         assert!(stats.total_pooled_objects() >= 0);
@@ -360,10 +366,10 @@ mod tests {
     async fn test_pool_warm_up() {
         let pools = GameDebugPools::new();
         pools.warm_up_pools().await;
-        
+
         let stats = pools.get_pool_stats().await;
         stats.log_stats();
-        
+
         // After warm-up, pools should have some objects
         // (Exact numbers depend on warm-up implementation)
     }

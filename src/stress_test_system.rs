@@ -780,7 +780,9 @@ impl StressTestRunner {
                 {
                     use rand::{rng, Rng};
                     let mut rng = rng();
-                    metrics.frame_times_ms.push(16.67 + rng.random::<f64>() * 10.0);
+                    metrics
+                        .frame_times_ms
+                        .push(16.67 + rng.random::<f64>() * 10.0);
                     metrics
                         .cpu_usage_percent
                         .push(50.0 + rng.random::<f64>() * 30.0);

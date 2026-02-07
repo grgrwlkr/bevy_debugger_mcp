@@ -1,11 +1,8 @@
 /// ECS Query Builder and Validator for safe query construction
-/// 
+///
 /// Provides a fluent interface for building complex ECS queries with validation,
 /// optimization suggestions, and performance estimation.
-use crate::brp_messages::{
-    ValidatedQuery, QueryFilter, QueryCost, ComponentFilter, 
-    DebugCommand
-};
+use crate::brp_messages::{ComponentFilter, DebugCommand, QueryCost, QueryFilter, ValidatedQuery};
 use crate::error::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -54,13 +51,14 @@ impl QueryBuilder {
 
     /// Add a required component to the query
     pub fn with_component<T: AsRef<str>>(mut self, component_type: T) -> Self {
-        self.with_components.push(component_type.as_ref().to_string());
+        self.with_components
+            .push(component_type.as_ref().to_string());
         self.invalidate_cache();
         self
     }
 
     /// Add multiple required components to the query
-    pub fn with_components<I, T>(mut self, components: I) -> Self 
+    pub fn with_components<I, T>(mut self, components: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -74,13 +72,14 @@ impl QueryBuilder {
 
     /// Add a component that entities must not have
     pub fn without_component<T: AsRef<str>>(mut self, component_type: T) -> Self {
-        self.without_components.push(component_type.as_ref().to_string());
+        self.without_components
+            .push(component_type.as_ref().to_string());
         self.invalidate_cache();
         self
     }
 
     /// Add multiple components that entities must not have
-    pub fn without_components<I, T>(mut self, components: I) -> Self 
+    pub fn without_components<I, T>(mut self, components: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -140,7 +139,7 @@ impl QueryBuilder {
     /// Build the query into a DebugCommand
     pub fn build(self) -> Result<DebugCommand> {
         let validated_query = self.validate()?;
-        
+
         Ok(DebugCommand::ExecuteQuery {
             query: validated_query,
             limit: self.limit,
@@ -183,24 +182,24 @@ impl QueryBuilder {
 
         // Create deterministic cache key from query components
         let mut key_parts = Vec::new();
-        
+
         // Sort components for deterministic key generation
         let mut with_sorted = self.with_components.clone();
         with_sorted.sort();
         key_parts.push(format!("with:{}", with_sorted.join(",")));
-        
+
         let mut without_sorted = self.without_components.clone();
         without_sorted.sort();
         key_parts.push(format!("without:{}", without_sorted.join(",")));
-        
+
         if !self.component_filters.is_empty() {
             key_parts.push(format!("filters:{}", self.component_filters.len()));
         }
-        
+
         if let Some(limit) = self.limit {
             key_parts.push(format!("limit:{}", limit));
         }
-        
+
         if let Some(offset) = self.offset {
             key_parts.push(format!("offset:{}", offset));
         }
@@ -229,7 +228,7 @@ impl QueryValidator {
     pub fn new() -> Self {
         // In a real implementation, this would be populated from Bevy's type registry
         let mut known_components = HashSet::new();
-        
+
         // Common Bevy components for validation
         known_components.insert("Transform".to_string());
         known_components.insert("GlobalTransform".to_string());
@@ -249,10 +248,8 @@ impl QueryValidator {
         known_components.insert("Children".to_string());
         known_components.insert("Visibility".to_string());
         known_components.insert("ComputedVisibility".to_string());
-        
-        Self {
-            known_components,
-        }
+
+        Self { known_components }
     }
 
     /// Validate a query builder and return a ValidatedQuery
@@ -262,8 +259,7 @@ impl QueryValidator {
         if total_components > MAX_COMPONENTS_PER_QUERY {
             return Err(Error::Validation(format!(
                 "Query has too many components: {} (max: {})",
-                total_components,
-                MAX_COMPONENTS_PER_QUERY
+                total_components, MAX_COMPONENTS_PER_QUERY
             )));
         }
 
@@ -349,9 +345,12 @@ impl QueryValidator {
         }
 
         // Check for empty query
-        if builder.with_components.is_empty() && builder.without_components.is_empty() && builder.component_filters.is_empty() {
+        if builder.with_components.is_empty()
+            && builder.without_components.is_empty()
+            && builder.component_filters.is_empty()
+        {
             return Err(Error::Validation(
-                "Query is empty - must specify at least one component filter".to_string()
+                "Query is empty - must specify at least one component filter".to_string(),
             ));
         }
 
@@ -401,11 +400,12 @@ impl QueryCostEstimator {
     pub fn estimate(&self, builder: &mut QueryBuilder) -> QueryCost {
         // Estimate number of entities to scan based on component selectivity
         let estimated_entities = self.estimate_entity_count(builder);
-        
+
         // Calculate time estimate
         let component_checks = builder.with_components.len() + builder.without_components.len();
-        let base_time = estimated_entities as u64 * component_checks as u64 * self.component_check_cost_us;
-        
+        let base_time =
+            estimated_entities as u64 * component_checks as u64 * self.component_check_cost_us;
+
         // Add filter overhead
         let filter_overhead = if !builder.component_filters.is_empty() {
             (base_time as f64 * self.filter_cost_multiplier) as u64
@@ -430,12 +430,12 @@ impl QueryCostEstimator {
     fn estimate_entity_count(&self, builder: &QueryBuilder) -> usize {
         // This is a simplified estimation - in reality would use statistics from the ECS world
         let base_entity_count = 10_000; // Assume 10k entities in world
-        
+
         // Apply selectivity based on component requirements
         let selectivity = self.calculate_selectivity(builder);
-        
+
         let estimated = (base_entity_count as f64 * selectivity) as usize;
-        
+
         // Apply limit if specified
         if let Some(limit) = builder.limit {
             estimated.min(limit)
@@ -454,13 +454,18 @@ impl QueryCostEstimator {
             ("Velocity", 0.1),
             ("Camera", 0.001),
             ("DirectionalLight", 0.0001),
-        ].iter().cloned().collect();
+        ]
+        .iter()
+        .cloned()
+        .collect();
 
         let mut selectivity = 1.0;
 
         // Apply selectivity reduction for each required component
         for component in &builder.with_components {
-            let component_sel = component_selectivity.get(component.as_str()).unwrap_or(&0.1);
+            let component_sel = component_selectivity
+                .get(component.as_str())
+                .unwrap_or(&0.1);
             selectivity *= component_sel;
         }
 
@@ -548,9 +553,13 @@ impl QueryOptimizer {
         let selective_components = ["Camera", "DirectionalLight", "PointLight"];
         let broad_components = ["Transform", "GlobalTransform"];
 
-        let has_selective = builder.with_components.iter()
+        let has_selective = builder
+            .with_components
+            .iter()
             .any(|c| selective_components.contains(&c.as_str()));
-        let has_broad = builder.with_components.iter()
+        let has_broad = builder
+            .with_components
+            .iter()
             .any(|c| broad_components.contains(&c.as_str()));
 
         if has_broad && !has_selective && builder.with_components.len() == 1 {
@@ -570,7 +579,8 @@ impl QueryOptimizer {
 
         if builder.with_components.len() > 10 {
             hints.push(
-                "Query requires many components - consider if all are necessary for your use case".to_string()
+                "Query requires many components - consider if all are necessary for your use case"
+                    .to_string(),
             );
         }
     }
@@ -632,12 +642,14 @@ mod tests {
 
     #[test]
     fn test_query_validation_unknown_component() {
-        let query = QueryBuilder::new()
-            .with_component("UnknownComponent");
+        let query = QueryBuilder::new().with_component("UnknownComponent");
 
         let result = query.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown component type"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown component type"));
     }
 
     #[test]
@@ -668,25 +680,26 @@ mod tests {
             .limit(100);
 
         let cost = query.estimate_cost();
-        
+
         assert!(cost.estimated_entities > 0);
         assert!(cost.estimated_time_us > 0);
         assert!(cost.estimated_memory > 0);
-        
+
         // Cost should be affected by limit
         assert!(cost.estimated_entities <= 100);
     }
 
     #[test]
     fn test_optimization_hints() {
-        let query = QueryBuilder::new()
-            .with_component("Transform"); // Broad component
+        let query = QueryBuilder::new().with_component("Transform"); // Broad component
 
         let hints = query.get_optimization_hints();
         assert!(!hints.is_empty());
-        
+
         // Should suggest adding more specific components or limits
-        assert!(hints.iter().any(|h| h.contains("broad") || h.contains("limit")));
+        assert!(hints
+            .iter()
+            .any(|h| h.contains("broad") || h.contains("limit")));
     }
 
     #[test]
@@ -698,20 +711,18 @@ mod tests {
 
         let mut query2 = QueryBuilder::new()
             .with_component("Velocity")
-            .with_component("Transform")  // Different order
+            .with_component("Transform") // Different order
             .limit(10);
 
         let key1 = query1.cache_key();
         let key2 = query2.cache_key();
-        
+
         assert_eq!(key1, key2); // Should be same despite different construction order
     }
 
     #[test]
     fn test_query_build_command() {
-        let query = QueryBuilder::new()
-            .with_component("Transform")
-            .limit(10);
+        let query = QueryBuilder::new().with_component("Transform").limit(10);
 
         let result = query.build();
         assert!(result.is_ok());
@@ -728,7 +739,7 @@ mod tests {
     #[test]
     fn test_too_many_components() {
         let mut query = QueryBuilder::new();
-        
+
         // Add too many components
         for i in 0..=MAX_COMPONENTS_PER_QUERY {
             query = query.with_component(format!("Component{}", i));
@@ -736,6 +747,9 @@ mod tests {
 
         let result = query.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("too many components"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("too many components"));
     }
 }

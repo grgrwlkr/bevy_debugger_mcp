@@ -1,6 +1,6 @@
-/// Visual Debug Overlay System for rendering debug information in Bevy games
-use crate::brp_messages::{DebugCommand, DebugResponse, DebugOverlayType};
 use crate::brp_client::BrpClient;
+/// Visual Debug Overlay System for rendering debug information in Bevy games
+use crate::brp_messages::{DebugCommand, DebugOverlayType, DebugResponse};
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -208,7 +208,7 @@ impl VisualDebugOverlay {
         }
 
         let mut states = self.overlay_states.write().await;
-        
+
         let state = OverlayState {
             enabled,
             config: config.unwrap_or(serde_json::json!({})),
@@ -220,10 +220,10 @@ impl VisualDebugOverlay {
         };
 
         states.insert(overlay_type.clone(), state);
-        
+
         // Send update to Bevy
         self.sync_overlay_state(overlay_type).await?;
-        
+
         info!("Set overlay {:?} enabled: {}", overlay_type, enabled);
         Ok(())
     }
@@ -326,7 +326,7 @@ impl VisualDebugOverlay {
     /// Add a custom debug marker
     pub async fn add_debug_marker(&self, marker: DebugMarker) -> Result<()> {
         let mut states = self.overlay_states.write().await;
-        
+
         // Get or create markers state
         let markers_state = states
             .entry(DebugOverlayType::DebugMarkers)
@@ -349,15 +349,16 @@ impl VisualDebugOverlay {
 
         // Sync with Bevy
         drop(states);
-        self.sync_overlay_state(&DebugOverlayType::DebugMarkers).await?;
-        
+        self.sync_overlay_state(&DebugOverlayType::DebugMarkers)
+            .await?;
+
         Ok(())
     }
 
     /// Remove a debug marker
     pub async fn remove_debug_marker(&self, marker_id: &str) -> Result<()> {
         let mut states = self.overlay_states.write().await;
-        
+
         if let Some(markers_state) = states.get_mut(&DebugOverlayType::DebugMarkers) {
             if let Some(markers_obj) = markers_state.config.get_mut("markers") {
                 if let Some(markers_map) = markers_obj.as_object_mut() {
@@ -367,22 +368,23 @@ impl VisualDebugOverlay {
         }
 
         drop(states);
-        self.sync_overlay_state(&DebugOverlayType::DebugMarkers).await?;
-        
+        self.sync_overlay_state(&DebugOverlayType::DebugMarkers)
+            .await?;
+
         Ok(())
     }
 
     /// Clear all overlays
     pub async fn clear_all_overlays(&self) -> Result<()> {
         let mut states = self.overlay_states.write().await;
-        
+
         for (overlay_type, state) in states.iter_mut() {
             state.enabled = false;
             self.sync_overlay_state(overlay_type).await?;
         }
-        
+
         states.clear();
-        
+
         info!("Cleared all visual overlays");
         Ok(())
     }
@@ -390,26 +392,26 @@ impl VisualDebugOverlay {
     /// Sync overlay state with Bevy
     async fn sync_overlay_state(&self, overlay_type: &DebugOverlayType) -> Result<()> {
         let states = self.overlay_states.read().await;
-        
+
         if let Some(state) = states.get(overlay_type) {
             // Send BRP command to update overlay in Bevy
             let mut client = self.brp_client.write().await;
-            
+
             let debug_command = crate::brp_messages::DebugCommand::SetVisualDebug {
                 overlay_type: overlay_type.clone(),
                 enabled: state.enabled,
                 config: Some(state.config.clone()),
             };
-            
+
             let request = crate::brp_messages::BrpRequest::Debug {
                 command: debug_command,
                 correlation_id: uuid::Uuid::new_v4().to_string(),
                 priority: Some(5),
             };
-            
+
             client.send_request(&request).await?;
         }
-        
+
         Ok(())
     }
 
@@ -421,7 +423,7 @@ impl VisualDebugOverlay {
     ) {
         let mut tracker = self.performance_tracker.write().await;
         tracker.update(overlay_type, frame_time_ms);
-        
+
         // Check if budget exceeded
         if tracker.total_frame_time_ms > self.config.performance_budget_ms {
             if tracker.should_warn() {
@@ -434,7 +436,7 @@ impl VisualDebugOverlay {
         } else {
             tracker.budget_exceeded = false;
         }
-        
+
         // Update state with performance impact
         let mut states = self.overlay_states.write().await;
         if let Some(state) = states.get_mut(overlay_type) {
@@ -446,14 +448,14 @@ impl VisualDebugOverlay {
     pub async fn get_performance_metrics(&self) -> HashMap<DebugOverlayType, f32> {
         let tracker = self.performance_tracker.read().await;
         let mut metrics = HashMap::new();
-        
+
         for (overlay_type, times) in &tracker.frame_times {
             if !times.is_empty() {
                 let avg = times.iter().sum::<f32>() / times.len() as f32;
                 metrics.insert(overlay_type.clone(), avg);
             }
         }
-        
+
         metrics
     }
 
@@ -485,17 +487,19 @@ impl PerformanceTracker {
     }
 
     fn update(&mut self, overlay_type: &DebugOverlayType, frame_time_ms: f32) {
-        let times = self.frame_times
+        let times = self
+            .frame_times
             .entry(overlay_type.clone())
             .or_insert_with(|| VecDeque::with_capacity(60));
-        
+
         times.push_back(frame_time_ms);
         if times.len() > 60 {
             times.pop_front();
         }
-        
+
         // Recalculate total
-        self.total_frame_time_ms = self.frame_times
+        self.total_frame_time_ms = self
+            .frame_times
             .values()
             .map(|times| {
                 if times.is_empty() {
@@ -512,9 +516,10 @@ impl PerformanceTracker {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_micros() as u64;
-        
+
         if let Some(last_us) = self.last_warning_us {
-            if (now_us - last_us) < 5_000_000 { // 5 seconds in microseconds
+            if (now_us - last_us) < 5_000_000 {
+                // 5 seconds in microseconds
                 return false;
             }
         }
@@ -534,8 +539,10 @@ pub async fn process_visual_debug_command(
             overlay_type,
             config,
         } => {
-            overlay.set_overlay_enabled(&overlay_type, enabled, config).await?;
-            
+            overlay
+                .set_overlay_enabled(&overlay_type, enabled, config)
+                .await?;
+
             Ok(DebugResponse::VisualDebugStatus {
                 overlay_type,
                 enabled,
@@ -562,9 +569,12 @@ mod tests {
         };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let overlay = VisualDebugOverlay::new(brp_client);
-        
+
         assert!(overlay.config.enabled);
-        assert_eq!(overlay.config.max_highlighted_entities, MAX_HIGHLIGHTED_ENTITIES);
+        assert_eq!(
+            overlay.config.max_highlighted_entities,
+            MAX_HIGHLIGHTED_ENTITIES
+        );
     }
 
     #[tokio::test]
@@ -576,13 +586,15 @@ mod tests {
         };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let overlay = VisualDebugOverlay::new(brp_client);
-        
+
         // Test highlighting with default config
         let entity_ids = vec![1, 2, 3];
-        let result = overlay.highlight_entities(entity_ids.clone(), None, None).await;
+        let result = overlay
+            .highlight_entities(entity_ids.clone(), None, None)
+            .await;
         // Will fail without actual BRP connection, but structure is tested
         assert!(result.is_err()); // Expected without real connection
-        
+
         // Test too many entities
         let many_entities: Vec<u64> = (0..200).collect();
         let result = overlay.highlight_entities(many_entities, None, None).await;
@@ -595,7 +607,7 @@ mod tests {
         let mode = HighlightMode::Outline;
         let json = serde_json::to_value(mode).unwrap();
         assert_eq!(json, serde_json::json!("Outline"));
-        
+
         let mode: HighlightMode = serde_json::from_value(json).unwrap();
         assert!(matches!(mode, HighlightMode::Outline));
     }
@@ -603,14 +615,14 @@ mod tests {
     #[test]
     fn test_performance_tracker() {
         let mut tracker = PerformanceTracker::new();
-        
+
         // Add some frame times
         tracker.update(&DebugOverlayType::EntityHighlight, 0.5);
         tracker.update(&DebugOverlayType::ColliderVisualization, 0.8);
         tracker.update(&DebugOverlayType::PerformanceMetrics, 0.3);
-        
+
         assert_eq!(tracker.total_frame_time_ms, 1.6);
-        
+
         // Test warning throttle
         assert!(tracker.should_warn());
         assert!(!tracker.should_warn()); // Should be throttled

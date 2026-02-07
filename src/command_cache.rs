@@ -1,10 +1,10 @@
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
-use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::error::{Error, Result};
@@ -28,7 +28,7 @@ impl Default for CacheConfig {
             max_entries: 1000,
             default_ttl: Duration::from_secs(300), // 5 minutes
             cleanup_interval: Duration::from_secs(60), // 1 minute
-            max_response_size: 1024 * 1024, // 1MB per response
+            max_response_size: 1024 * 1024,        // 1MB per response
         }
     }
 }
@@ -46,27 +46,30 @@ impl CacheKey {
     pub fn new(tool_name: &str, arguments: &Value) -> Result<Self> {
         let arguments_json = serde_json::to_string(arguments)
             .map_err(|e| Error::Validation(format!("Failed to serialize arguments: {}", e)))?;
-        
+
         let mut hasher = Sha256::new();
         hasher.update(arguments_json.as_bytes());
         let arguments_hash = format!("{:x}", hasher.finalize());
-        
+
         // Include feature flags in cache key to prevent cache poisoning
         let feature_flags = get_active_feature_flags();
         let mut feature_hasher = Sha256::new();
         feature_hasher.update(feature_flags.as_bytes());
         let feature_flags_hash = format!("{:x}", feature_hasher.finalize());
-        
+
         Ok(Self {
             tool_name: tool_name.to_string(),
             arguments_hash,
             feature_flags_hash,
         })
     }
-    
+
     /// Convert to a string key for HashMap storage
     pub fn to_string_key(&self) -> String {
-        format!("{}:{}:{}", self.tool_name, self.arguments_hash, self.feature_flags_hash)
+        format!(
+            "{}:{}:{}",
+            self.tool_name, self.arguments_hash, self.feature_flags_hash
+        )
     }
 }
 
@@ -92,12 +95,12 @@ impl CachedResult {
     pub fn is_expired(&self) -> bool {
         self.cached_at.elapsed() > self.ttl
     }
-    
+
     /// Get the age of this cache entry
     pub fn age(&self) -> Duration {
         self.cached_at.elapsed()
     }
-    
+
     /// Increment hit count
     pub fn record_hit(&mut self) {
         self.hit_count += 1;
@@ -151,62 +154,65 @@ impl CommandCache {
             })),
             access_order: Arc::new(RwLock::new(Vec::new())),
         };
-        
+
         // Start background cleanup task
         cache.start_cleanup_task();
-        
+
         cache
     }
-    
+
     /// Get a cached result if available and not expired
     pub async fn get(&self, key: &CacheKey) -> Option<Value> {
         let string_key = key.to_string_key();
         let mut cache = self.cache.write().await;
         let mut stats = self.stats.write().await;
-        
+
         if let Some(cached_result) = cache.get_mut(&string_key) {
             if !cached_result.is_expired() {
                 cached_result.record_hit();
                 stats.total_hits += 1;
-                
+
                 // Update access order for LRU
                 self.update_access_order(&string_key).await;
-                
+
                 debug!("Cache hit for {}", key.tool_name);
                 return Some(cached_result.response.clone());
             } else {
                 // Remove expired entry
                 let removed = cache.remove(&string_key);
                 if let Some(removed) = removed {
-                    stats.total_size_bytes = stats.total_size_bytes.saturating_sub(removed.size_bytes);
+                    stats.total_size_bytes =
+                        stats.total_size_bytes.saturating_sub(removed.size_bytes);
                     stats.total_entries = stats.total_entries.saturating_sub(1);
                 }
                 debug!("Cache entry expired for {}", key.tool_name);
             }
         }
-        
+
         stats.total_misses += 1;
         self.update_hit_rate(&mut stats).await;
         debug!("Cache miss for {}", key.tool_name);
         None
     }
-    
+
     /// Store a result in the cache
     pub async fn put(&self, key: &CacheKey, response: Value, tags: Vec<String>) -> Result<()> {
         let string_key = key.to_string_key();
-        
+
         // Calculate response size
         let response_json = serde_json::to_string(&response)
             .map_err(|e| Error::Validation(format!("Failed to serialize response: {}", e)))?;
         let size_bytes = response_json.len();
-        
+
         // Check if response is too large
         if size_bytes > self.config.max_response_size {
-            warn!("Response too large to cache: {} bytes > {} bytes limit", 
-                  size_bytes, self.config.max_response_size);
+            warn!(
+                "Response too large to cache: {} bytes > {} bytes limit",
+                size_bytes, self.config.max_response_size
+            );
             return Ok(());
         }
-        
+
         let cached_result = CachedResult {
             response,
             cached_at: Instant::now(),
@@ -215,15 +221,15 @@ impl CommandCache {
             hit_count: 0,
             tags,
         };
-        
+
         let mut cache = self.cache.write().await;
         let mut stats = self.stats.write().await;
-        
+
         // Check if we need to evict entries
         if cache.len() >= self.config.max_entries {
             self.evict_lru_entries(&mut cache, &mut stats).await;
         }
-        
+
         // Add new entry
         if let Some(old_entry) = cache.insert(string_key.clone(), cached_result) {
             // Replace existing entry
@@ -232,30 +238,38 @@ impl CommandCache {
             // New entry
             stats.total_entries += 1;
         }
-        
+
         stats.total_size_bytes += size_bytes;
         self.update_access_order(&string_key).await;
-        
+
         debug!("Cached result for {} ({} bytes)", key.tool_name, size_bytes);
         Ok(())
     }
-    
+
     /// Store a result with custom TTL
-    pub async fn put_with_ttl(&self, key: &CacheKey, response: Value, ttl: Duration, tags: Vec<String>) -> Result<()> {
+    pub async fn put_with_ttl(
+        &self,
+        key: &CacheKey,
+        response: Value,
+        ttl: Duration,
+        tags: Vec<String>,
+    ) -> Result<()> {
         let string_key = key.to_string_key();
-        
+
         // Calculate response size
         let response_json = serde_json::to_string(&response)
             .map_err(|e| Error::Validation(format!("Failed to serialize response: {}", e)))?;
         let size_bytes = response_json.len();
-        
+
         // Check if response is too large
         if size_bytes > self.config.max_response_size {
-            warn!("Response too large to cache: {} bytes > {} bytes limit", 
-                  size_bytes, self.config.max_response_size);
+            warn!(
+                "Response too large to cache: {} bytes > {} bytes limit",
+                size_bytes, self.config.max_response_size
+            );
             return Ok(());
         }
-        
+
         let cached_result = CachedResult {
             response,
             cached_at: Instant::now(),
@@ -264,15 +278,15 @@ impl CommandCache {
             hit_count: 0,
             tags,
         };
-        
+
         let mut cache = self.cache.write().await;
         let mut stats = self.stats.write().await;
-        
+
         // Check if we need to evict entries
         if cache.len() >= self.config.max_entries {
             self.evict_lru_entries(&mut cache, &mut stats).await;
         }
-        
+
         // Add new entry
         if let Some(old_entry) = cache.insert(string_key.clone(), cached_result) {
             // Replace existing entry
@@ -281,27 +295,30 @@ impl CommandCache {
             // New entry
             stats.total_entries += 1;
         }
-        
+
         stats.total_size_bytes += size_bytes;
         self.update_access_order(&string_key).await;
-        
-        debug!("Cached result for {} with custom TTL {:?} ({} bytes)", key.tool_name, ttl, size_bytes);
+
+        debug!(
+            "Cached result for {} with custom TTL {:?} ({} bytes)",
+            key.tool_name, ttl, size_bytes
+        );
         Ok(())
     }
-    
+
     /// Invalidate cache entries by tag
     pub async fn invalidate_by_tag(&self, tag: &str) -> usize {
         let mut cache = self.cache.write().await;
         let mut stats = self.stats.write().await;
         let mut access_order = self.access_order.write().await;
-        
+
         let mut to_remove = Vec::new();
         for (key, cached_result) in cache.iter() {
             if cached_result.tags.contains(&tag.to_string()) {
                 to_remove.push(key.clone());
             }
         }
-        
+
         let count = to_remove.len();
         for key in to_remove {
             if let Some(removed) = cache.remove(&key) {
@@ -311,33 +328,33 @@ impl CommandCache {
             }
             access_order.retain(|k| k != &key);
         }
-        
+
         info!("Invalidated {} cache entries with tag '{}'", count, tag);
         count
     }
-    
+
     /// Clear all cache entries
     pub async fn clear(&self) {
         let mut cache = self.cache.write().await;
         let mut stats = self.stats.write().await;
         let mut access_order = self.access_order.write().await;
-        
+
         let count = cache.len();
         cache.clear();
         access_order.clear();
-        
+
         stats.total_entries = 0;
         stats.total_size_bytes = 0;
         stats.evicted_entries += count as u64;
-        
+
         info!("Cleared {} cache entries", count);
     }
-    
+
     /// Get cache statistics
     pub async fn get_statistics(&self) -> CacheStatistics {
         let cache = self.cache.read().await;
         let mut stats = self.stats.write().await;
-        
+
         // Update real-time statistics
         stats.total_entries = cache.len();
         self.update_hit_rate(&mut stats).await;
@@ -346,12 +363,12 @@ impl CommandCache {
         } else {
             0.0
         };
-        
+
         // Calculate entry age statistics
         let now = Instant::now();
         let mut oldest_age = Duration::ZERO;
         let mut newest_age = Duration::MAX;
-        
+
         for cached_result in cache.values() {
             let age = now.duration_since(cached_result.cached_at);
             if age > oldest_age {
@@ -361,33 +378,37 @@ impl CommandCache {
                 newest_age = age;
             }
         }
-        
+
         stats.oldest_entry_age_seconds = oldest_age.as_secs_f64();
         stats.newest_entry_age_seconds = if newest_age == Duration::MAX {
             0.0
         } else {
             newest_age.as_secs_f64()
         };
-        
+
         stats.clone()
     }
-    
+
     /// Update access order for LRU eviction
     async fn update_access_order(&self, key: &str) {
         let mut access_order = self.access_order.write().await;
-        
+
         // Remove if exists
         access_order.retain(|k| k != key);
-        
+
         // Add to front (most recently used)
         access_order.insert(0, key.to_string());
     }
-    
+
     /// Evict least recently used entries
-    async fn evict_lru_entries(&self, cache: &mut HashMap<String, CachedResult>, stats: &mut CacheStatistics) {
+    async fn evict_lru_entries(
+        &self,
+        cache: &mut HashMap<String, CachedResult>,
+        stats: &mut CacheStatistics,
+    ) {
         let access_order = self.access_order.read().await;
         let entries_to_evict = (cache.len() + 1).saturating_sub(self.config.max_entries);
-        
+
         // Evict from the end of access_order (least recently used)
         let mut evicted = 0;
         for key in access_order.iter().rev().take(entries_to_evict) {
@@ -398,10 +419,10 @@ impl CommandCache {
                 evicted += 1;
             }
         }
-        
+
         debug!("Evicted {} LRU cache entries", evicted);
     }
-    
+
     /// Update hit rate statistics
     async fn update_hit_rate(&self, stats: &mut CacheStatistics) {
         let total_requests = stats.total_hits + stats.total_misses;
@@ -411,44 +432,46 @@ impl CommandCache {
             0.0
         };
     }
-    
+
     /// Start background cleanup task
     fn start_cleanup_task(&self) {
         let cache = self.cache.clone();
         let stats = self.stats.clone();
         let access_order = self.access_order.clone();
         let cleanup_interval = self.config.cleanup_interval;
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(cleanup_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 let mut cache_guard = cache.write().await;
                 let mut stats_guard = stats.write().await;
                 let mut access_order_guard = access_order.write().await;
-                
+
                 let mut expired_keys = Vec::new();
                 let now = Instant::now();
-                
+
                 for (key, cached_result) in cache_guard.iter() {
                     if cached_result.is_expired() {
                         expired_keys.push(key.clone());
                     }
                 }
-                
+
                 let expired_count = expired_keys.len();
                 for key in &expired_keys {
                     if let Some(removed) = cache_guard.remove(key) {
-                        stats_guard.total_size_bytes = stats_guard.total_size_bytes.saturating_sub(removed.size_bytes);
+                        stats_guard.total_size_bytes = stats_guard
+                            .total_size_bytes
+                            .saturating_sub(removed.size_bytes);
                         stats_guard.total_entries = stats_guard.total_entries.saturating_sub(1);
                     }
                     access_order_guard.retain(|k| k != key);
                 }
-                
+
                 stats_guard.cleanup_runs += 1;
-                
+
                 if expired_count > 0 {
                     debug!("Cache cleanup removed {} expired entries", expired_count);
                 }
@@ -460,49 +483,49 @@ impl CommandCache {
 /// Get active feature flags as a string for cache key generation
 fn get_active_feature_flags() -> String {
     let mut flags = Vec::new();
-    
+
     #[cfg(feature = "basic-debugging")]
     flags.push("basic-debugging");
-    
+
     #[cfg(feature = "entity-inspection")]
     flags.push("entity-inspection");
-    
+
     #[cfg(feature = "performance-profiling")]
     flags.push("performance-profiling");
-    
+
     #[cfg(feature = "visual-debugging")]
     flags.push("visual-debugging");
-    
+
     #[cfg(feature = "session-management")]
     flags.push("session-management");
-    
+
     #[cfg(feature = "issue-detection")]
     flags.push("issue-detection");
-    
+
     #[cfg(feature = "memory-profiling")]
     flags.push("memory-profiling");
-    
+
     #[cfg(feature = "stress-testing")]
     flags.push("stress-testing");
-    
+
     #[cfg(feature = "time-travel")]
     flags.push("time-travel");
-    
+
     #[cfg(feature = "orchestration")]
     flags.push("orchestration");
-    
+
     #[cfg(feature = "optimizations")]
     flags.push("optimizations");
-    
+
     #[cfg(feature = "caching")]
     flags.push("caching");
-    
+
     #[cfg(feature = "pooling")]
     flags.push("pooling");
-    
+
     #[cfg(feature = "lazy-init")]
     flags.push("lazy-init");
-    
+
     flags.join(",")
 }
 
@@ -510,7 +533,7 @@ fn get_active_feature_flags() -> String {
 mod tests {
     use super::*;
     use serde_json::json;
-    
+
     #[tokio::test]
     async fn test_cache_basic_operations() {
         let config = CacheConfig {
@@ -520,24 +543,30 @@ mod tests {
             max_response_size: 1024,
         };
         let cache = CommandCache::new(config);
-        
+
         let key1 = CacheKey::new("test_tool", &json!({"param": "value1"})).unwrap();
         let key2 = CacheKey::new("test_tool", &json!({"param": "value2"})).unwrap();
         let response1 = json!({"result": "data1"});
         let response2 = json!({"result": "data2"});
-        
+
         // Test cache miss
         assert!(cache.get(&key1).await.is_none());
-        
+
         // Test cache put and hit
-        cache.put(&key1, response1.clone(), vec!["tag1".to_string()]).await.unwrap();
+        cache
+            .put(&key1, response1.clone(), vec!["tag1".to_string()])
+            .await
+            .unwrap();
         assert_eq!(cache.get(&key1).await.unwrap(), response1);
-        
+
         // Test cache capacity limit
-        cache.put(&key2, response2.clone(), vec!["tag2".to_string()]).await.unwrap();
+        cache
+            .put(&key2, response2.clone(), vec!["tag2".to_string()])
+            .await
+            .unwrap();
         assert_eq!(cache.get(&key2).await.unwrap(), response2);
     }
-    
+
     #[tokio::test]
     async fn test_cache_expiration() {
         let config = CacheConfig {
@@ -547,38 +576,48 @@ mod tests {
             max_response_size: 1024,
         };
         let cache = CommandCache::new(config);
-        
+
         let key = CacheKey::new("test_tool", &json!({"param": "value"})).unwrap();
         let response = json!({"result": "data"});
-        
+
         cache.put(&key, response.clone(), vec![]).await.unwrap();
         assert_eq!(cache.get(&key).await.unwrap(), response);
-        
+
         // Wait for expiration
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(cache.get(&key).await.is_none());
     }
-    
+
     #[tokio::test]
     async fn test_tag_invalidation() {
         let config = CacheConfig::default();
         let cache = CommandCache::new(config);
-        
+
         let key1 = CacheKey::new("tool1", &json!({"param": "value1"})).unwrap();
         let key2 = CacheKey::new("tool2", &json!({"param": "value2"})).unwrap();
         let response1 = json!({"result": "data1"});
         let response2 = json!({"result": "data2"});
-        
-        cache.put(&key1, response1.clone(), vec!["entity_data".to_string()]).await.unwrap();
-        cache.put(&key2, response2.clone(), vec!["performance_data".to_string()]).await.unwrap();
-        
+
+        cache
+            .put(&key1, response1.clone(), vec!["entity_data".to_string()])
+            .await
+            .unwrap();
+        cache
+            .put(
+                &key2,
+                response2.clone(),
+                vec!["performance_data".to_string()],
+            )
+            .await
+            .unwrap();
+
         assert_eq!(cache.get(&key1).await.unwrap(), response1);
         assert_eq!(cache.get(&key2).await.unwrap(), response2);
-        
+
         // Invalidate by tag
         let invalidated = cache.invalidate_by_tag("entity_data").await;
         assert_eq!(invalidated, 1);
-        
+
         assert!(cache.get(&key1).await.is_none());
         assert_eq!(cache.get(&key2).await.unwrap(), response2);
     }

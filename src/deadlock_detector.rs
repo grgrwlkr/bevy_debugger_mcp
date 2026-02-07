@@ -1,13 +1,13 @@
 //! Deadlock detection system for debug builds
-//! 
+//!
 //! This module provides runtime deadlock detection by tracking lock acquisitions
 //! and analyzing dependency cycles in the lock graph.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Unique identifier for locks
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -79,7 +79,12 @@ impl DeadlockDetector {
     }
 
     /// Register a lock acquisition attempt
-    pub fn register_lock_attempt(&self, lock_id: LockId, lock_type: LockType, location: &'static str) {
+    pub fn register_lock_attempt(
+        &self,
+        lock_id: LockId,
+        lock_type: LockType,
+        location: &'static str,
+    ) {
         if !self.monitoring_enabled {
             return;
         }
@@ -93,10 +98,13 @@ impl DeadlockDetector {
         // Check for potential deadlocks before acquiring
         if let Some(current_locks) = state.held_locks.get(&thread_id) {
             let current_locks = current_locks.clone(); // Clone to avoid borrow checker issues
-            
+
             // Add edges from all currently held locks to this new one
             for &held_lock in &current_locks {
-                let edge = LockEdge { from: held_lock, to: lock_id };
+                let edge = LockEdge {
+                    from: held_lock,
+                    to: lock_id,
+                };
                 state.dependency_graph.insert(edge);
 
                 // Check for cycles
@@ -118,7 +126,8 @@ impl DeadlockDetector {
         let thread_id = thread::current().id();
         let mut state = self.state.lock().unwrap();
 
-        state.held_locks
+        state
+            .held_locks
             .entry(thread_id)
             .or_insert_with(Vec::new)
             .push(lock_id);
@@ -176,17 +185,17 @@ impl DeadlockDetector {
         eprintln!("Thread: {:?}", thread::current().id());
         eprintln!("Location: {}", location);
         eprintln!("Currently holding {} locks:", held_locks.len());
-        
+
         for &lock_id in held_locks {
             if let Some(info) = state.lock_info.get(&lock_id) {
                 eprintln!("  - Lock {:?}: {}", lock_id, info);
             }
         }
-        
+
         if let Some(info) = state.lock_info.get(&waiting_for) {
             eprintln!("Waiting for Lock {:?}: {}", waiting_for, info);
         }
-        
+
         eprintln!("Dependency cycle detected in lock graph!");
         eprintln!("Consider reordering lock acquisitions or using timeout-based locking.\n");
     }
@@ -244,7 +253,7 @@ impl<T> TrackedRwLock<T> {
     pub async fn read(&self) -> std::sync::RwLockReadGuard<'_, T> {
         let detector = get_deadlock_detector();
         detector.register_lock_attempt(self.lock_id, LockType::Read, self.name);
-        
+
         let guard = self.inner.read().unwrap();
         detector.register_lock_acquired(self.lock_id);
         guard
@@ -253,7 +262,7 @@ impl<T> TrackedRwLock<T> {
     pub async fn write(&self) -> std::sync::RwLockWriteGuard<'_, T> {
         let detector = get_deadlock_detector();
         detector.register_lock_attempt(self.lock_id, LockType::Write, self.name);
-        
+
         let guard = self.inner.write().unwrap();
         detector.register_lock_acquired(self.lock_id);
         guard
@@ -320,7 +329,7 @@ mod tests {
     fn test_tracked_rwlock() {
         let data = Arc::new(RwLock::new(42));
         let tracked = TrackedRwLock::new(data, "test_lock");
-        
+
         // This would work in an async context
         // let guard = tracked.read().await;
         // assert_eq!(*guard, 42);

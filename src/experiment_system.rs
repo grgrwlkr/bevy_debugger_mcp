@@ -238,7 +238,9 @@ impl ActionExecutor {
                         *entity_id,
                     ))
                 } else {
-                    Err(Error::Validation("Expected entity spawned result".to_string()))
+                    Err(Error::Validation(
+                        "Expected entity spawned result".to_string(),
+                    ))
                 }
             }
             Ok(BrpResponse::Error(err)) => Ok(ActionResult::failure("spawn", err.message)),
@@ -301,7 +303,9 @@ impl ActionExecutor {
 
                     Ok(result)
                 } else {
-                    Err(Error::Validation("Expected entity modified result".to_string()))
+                    Err(Error::Validation(
+                        "Expected entity modified result".to_string(),
+                    ))
                 }
             }
             Ok(BrpResponse::Error(err)) => Ok(ActionResult::failure("modify", err.message)),
@@ -346,7 +350,9 @@ impl ActionExecutor {
 
                     Ok(result)
                 } else {
-                    Err(Error::Validation("Expected entity deleted result".to_string()))
+                    Err(Error::Validation(
+                        "Expected entity deleted result".to_string(),
+                    ))
                 }
             }
             Ok(BrpResponse::Error(err)) => Ok(ActionResult::failure("delete", err.message)),

@@ -7,35 +7,34 @@ use tracing::{debug, error, info, warn};
 
 use crate::brp_client::BrpClient;
 use crate::brp_messages::DebugCommand;
-use crate::suggestion_engine::{SuggestionContext, SystemState};
-use crate::workflow_automation::UserPreferences;
 use crate::checkpoint::{CheckpointConfig, CheckpointManager};
+use crate::command_cache::{CacheConfig, CacheKey, CommandCache};
+use crate::compile_opts::{cold_path, inline_hot_path, CompileConfig};
 use crate::config::Config;
 use crate::dead_letter_queue::{DeadLetterConfig, DeadLetterQueue};
 use crate::debug_command_processor::{
-    DebugCommandRequest, DebugCommandRouter, 
-    EntityInspectionProcessor, DebugMetrics,
+    DebugCommandRequest, DebugCommandRouter, DebugMetrics, EntityInspectionProcessor,
 };
-use crate::visual_debug_overlay_processor::VisualDebugOverlayProcessor;
-use crate::query_builder_processor::QueryBuilderProcessor;
-use crate::memory_profiler_processor::MemoryProfilerProcessor;
-use crate::session_processor::SessionProcessor;
-use crate::issue_detector_processor::IssueDetectorProcessor;
-use crate::performance_budget_processor::PerformanceBudgetProcessor;
+use crate::diagnostics::{create_bug_report, DiagnosticCollector};
 use crate::entity_inspector::EntityInspector;
+use crate::error::{Error, ErrorContext, ErrorSeverity, Result};
+use crate::issue_detector_processor::IssueDetectorProcessor;
+use crate::lazy_init::{preload_critical_components, LazyComponents};
+use crate::memory_profiler_processor::MemoryProfilerProcessor;
+use crate::performance_budget_processor::PerformanceBudgetProcessor;
+use crate::profiling::{get_profiler, init_profiler, PerfMeasurement};
+use crate::query_builder_processor::QueryBuilderProcessor;
+use crate::resource_manager::{ResourceConfig, ResourceManager};
+use crate::response_pool::{ResponsePool, ResponsePoolConfig};
+use crate::session_processor::SessionProcessor;
+use crate::suggestion_engine::{SuggestionContext, SystemState};
 use crate::system_profiler::SystemProfiler;
 use crate::system_profiler_processor::SystemProfilerProcessor;
-use crate::diagnostics::{create_bug_report, DiagnosticCollector};
-use crate::error::{Error, ErrorContext, ErrorSeverity, Result};
-use crate::resource_manager::{ResourceConfig, ResourceManager};
 use crate::tool_orchestration::{ToolContext, ToolOrchestrator, ToolPipeline};
 use crate::tools::{anomaly, experiment, hypothesis, observe, orchestration, replay, stress};
-use crate::lazy_init::{LazyComponents, preload_critical_components};
-use crate::command_cache::{CommandCache, CacheConfig, CacheKey};
-use crate::response_pool::{ResponsePool, ResponsePoolConfig};
-use crate::profiling::{init_profiler, get_profiler, PerfMeasurement};
-use crate::{profile_block, profile_async_block};
-use crate::compile_opts::{CompileConfig, inline_hot_path, cold_path};
+use crate::visual_debug_overlay_processor::VisualDebugOverlayProcessor;
+use crate::workflow_automation::UserPreferences;
+use crate::{profile_async_block, profile_block};
 
 pub struct McpServer {
     config: Config,
@@ -69,7 +68,7 @@ impl McpServer {
             max_entries: 500,
             default_ttl: Duration::from_secs(300), // 5 minutes
             cleanup_interval: Duration::from_secs(60), // 1 minute
-            max_response_size: 512 * 1024, // 512KB per response
+            max_response_size: 512 * 1024,         // 512KB per response
         };
         let command_cache = Arc::new(CommandCache::new(cache_config));
 
@@ -78,9 +77,9 @@ impl McpServer {
             max_small_buffers: 100,
             max_medium_buffers: 50,
             max_large_buffers: 20,
-            small_buffer_capacity: 1024,      // 1KB
-            medium_buffer_capacity: 32768,    // 32KB
-            large_buffer_capacity: 524288,    // 512KB
+            small_buffer_capacity: 1024,   // 1KB
+            medium_buffer_capacity: 32768, // 32KB
+            large_buffer_capacity: 524288, // 512KB
             track_utilization: true,
             cleanup_interval: Duration::from_secs(120), // 2 minutes
         };
@@ -105,7 +104,7 @@ impl McpServer {
 
         // Initialize performance profiler
         let _profiler = init_profiler();
-        
+
         info!("MCP Server initialized with lazy component loading, command caching, response pooling, and hot path profiling for optimal startup performance");
 
         McpServer {
@@ -216,49 +215,60 @@ impl McpServer {
 
             // Clone arguments for error reporting later
             let args_for_error = arguments.clone();
-            
+
             // Use shared Arc reference for all tool handlers
             let brp_client_ref = Arc::clone(&self.brp_client);
 
-            let result: Result<serde_json::Value> = profile_async_block!(format!("tool_execution_{}", tool_name), async {
-                match tool_name {
-                    "observe" => observe::handle(arguments, brp_client_ref).await,
-                    "experiment" => experiment::handle(arguments, Arc::clone(&brp_client_ref)).await,
-                    "screenshot" => self.handle_screenshot(arguments).await,
-                    "hypothesis" => hypothesis::handle(arguments, Arc::clone(&brp_client_ref)).await,
-                    "stress" => stress::handle(arguments, Arc::clone(&brp_client_ref)).await,
-                    "replay" => replay::handle(arguments, Arc::clone(&brp_client_ref)).await,
-                    "anomaly" => anomaly::handle(arguments, Arc::clone(&brp_client_ref)).await,
-                    "orchestrate" => self.handle_orchestration(arguments).await,
-                    "pipeline" => self.handle_pipeline_execution(arguments).await,
-                    "resource_metrics" => self.handle_resource_metrics(arguments).await,
-                    "performance_dashboard" => self.handle_performance_dashboard(arguments).await,
-                    "health_check" => self.handle_health_check(arguments).await,
-                    // New diagnostic and error recovery endpoints
-                    "dead_letter_queue" => self.handle_dead_letter_queue(arguments).await,
-                    "diagnostic_report" => self.handle_diagnostic_report(arguments).await,
-                    "checkpoint" => self.handle_checkpoint(arguments).await,
-                    "bug_report" => self.handle_bug_report(arguments).await,
-                    "debug" => self.handle_debug_command(arguments).await,
-                    // Machine learning and automation endpoints
-                    "get_suggestions" => self.handle_get_suggestions(arguments).await,
-                    "track_suggestion" => self.handle_track_suggestion(arguments).await,
-                    "get_patterns" => self.handle_get_patterns(arguments).await,
-                    "execute_workflow" => self.handle_execute_workflow(arguments).await,
-                    "approve_workflow" => self.handle_approve_workflow(arguments).await,
-                    "get_workflows" => self.handle_get_workflows(arguments).await,
-                    // Hot reload endpoints
-                    "hot_reload" => self.handle_hot_reload(arguments).await,
-                    "get_model_versions" => self.handle_get_model_versions(arguments).await,
-                    _ => Err(Error::Mcp(format!("Unknown tool: {tool_name}"))),
-                }
-            });
+            let result: Result<serde_json::Value> =
+                profile_async_block!(format!("tool_execution_{}", tool_name), async {
+                    match tool_name {
+                        "observe" => observe::handle(arguments, brp_client_ref).await,
+                        "experiment" => {
+                            experiment::handle(arguments, Arc::clone(&brp_client_ref)).await
+                        }
+                        "screenshot" => self.handle_screenshot(arguments).await,
+                        "hypothesis" => {
+                            hypothesis::handle(arguments, Arc::clone(&brp_client_ref)).await
+                        }
+                        "stress" => stress::handle(arguments, Arc::clone(&brp_client_ref)).await,
+                        "replay" => replay::handle(arguments, Arc::clone(&brp_client_ref)).await,
+                        "anomaly" => anomaly::handle(arguments, Arc::clone(&brp_client_ref)).await,
+                        "orchestrate" => self.handle_orchestration(arguments).await,
+                        "pipeline" => self.handle_pipeline_execution(arguments).await,
+                        "resource_metrics" => self.handle_resource_metrics(arguments).await,
+                        "performance_dashboard" => {
+                            self.handle_performance_dashboard(arguments).await
+                        }
+                        "health_check" => self.handle_health_check(arguments).await,
+                        // New diagnostic and error recovery endpoints
+                        "dead_letter_queue" => self.handle_dead_letter_queue(arguments).await,
+                        "diagnostic_report" => self.handle_diagnostic_report(arguments).await,
+                        "checkpoint" => self.handle_checkpoint(arguments).await,
+                        "bug_report" => self.handle_bug_report(arguments).await,
+                        "debug" => self.handle_debug_command(arguments).await,
+                        // Machine learning and automation endpoints
+                        "get_suggestions" => self.handle_get_suggestions(arguments).await,
+                        "track_suggestion" => self.handle_track_suggestion(arguments).await,
+                        "get_patterns" => self.handle_get_patterns(arguments).await,
+                        "execute_workflow" => self.handle_execute_workflow(arguments).await,
+                        "approve_workflow" => self.handle_approve_workflow(arguments).await,
+                        "get_workflows" => self.handle_get_workflows(arguments).await,
+                        // Hot reload endpoints
+                        "hot_reload" => self.handle_hot_reload(arguments).await,
+                        "get_model_versions" => self.handle_get_model_versions(arguments).await,
+                        _ => Err(Error::Mcp(format!("Unknown tool: {tool_name}"))),
+                    }
+                });
 
             // Cache successful results for cacheable tools
             if let (Ok(ref response), Some(cache_key)) = (&result, cache_key) {
                 profile_async_block!("cache_store", async {
                     let tags = self.get_cache_tags_for_tool(tool_name);
-                    if let Err(e) = self.command_cache.put(&cache_key, response.clone(), tags).await {
+                    if let Err(e) = self
+                        .command_cache
+                        .put(&cache_key, response.clone(), tags)
+                        .await
+                    {
                         warn!("Failed to cache result for {}: {}", tool_name, e);
                     }
                 });
@@ -315,7 +325,7 @@ impl McpServer {
         let tool_result = orchestrator
             .execute_tool(tool.to_string(), tool_args.clone(), &mut context)
             .await?;
-        
+
         let result = tool_result.output;
 
         // Sanitize context before returning - remove sensitive data
@@ -553,10 +563,10 @@ impl McpServer {
         let mut client = self.brp_client.write().await;
         match client.send_request(&request).await {
             Ok(response) => match response {
-                crate::brp_messages::BrpResponse::Success(
-                    boxed_result
-                ) => {
-                    if let crate::brp_messages::BrpResult::Screenshot { path, success } = boxed_result.as_ref() {
+                crate::brp_messages::BrpResponse::Success(boxed_result) => {
+                    if let crate::brp_messages::BrpResult::Screenshot { path, success } =
+                        boxed_result.as_ref()
+                    {
                         if *success {
                             Ok(json!({
                                 "success": true,
@@ -743,7 +753,7 @@ impl McpServer {
                         "checkpoints": checkpoint_list,
                         "total_count": checkpoint_list.len()
                     })),
-                    Err(e) => Err(Error::Checkpoint(e.to_string()))
+                    Err(e) => Err(Error::Checkpoint(e.to_string())),
                 }
             }
             "delete" => {
@@ -768,7 +778,7 @@ impl McpServer {
 
                 match stats {
                     Ok(stats_data) => Ok(serde_json::to_value(stats_data)?),
-                    Err(e) => Err(Error::Checkpoint(e.to_string()))
+                    Err(e) => Err(Error::Checkpoint(e.to_string())),
                 }
             }
             _ => Err(Error::Validation(format!(
@@ -826,11 +836,13 @@ impl McpServer {
     async fn handle_debug_command(&self, arguments: Value) -> Result<Value> {
         // Extract command from arguments
         let command: DebugCommand = serde_json::from_value(
-            arguments.get("command")
+            arguments
+                .get("command")
                 .ok_or_else(|| Error::Validation("Missing 'command' field".to_string()))?
-                .clone()
-        ).map_err(|e| Error::Validation(format!("Invalid debug command: {}", e)))?;
-        
+                .clone(),
+        )
+        .map_err(|e| Error::Validation(format!("Invalid debug command: {}", e)))?;
+
         // Extract correlation_id and priority
         let correlation_id = arguments
             .get("correlation_id")
@@ -840,25 +852,25 @@ impl McpServer {
                 // Generate a unique correlation ID
                 uuid::Uuid::new_v4().to_string()
             });
-            
+
         let priority = arguments
             .get("priority")
             .and_then(|p| p.as_u64())
             .map(|p| p as u8);
-        
+
         // Create debug command request
         let request = DebugCommandRequest::new(command, correlation_id.clone(), priority);
-        
+
         // Get the debug command router (lazy initialization)
         let debug_command_router = self.lazy_components.get_debug_command_router().await;
-        
+
         // Queue the command for processing
         debug_command_router.queue_command(request).await?;
-        
+
         // For synchronous response, process immediately
         // In production, this could be made fully async with webhooks
         let result = debug_command_router.process_next().await;
-        
+
         match result {
             Some(Ok((corr_id, response))) => {
                 // Convert debug response to JSON
@@ -899,12 +911,12 @@ impl McpServer {
         let debug_command_router = self.lazy_components.get_debug_command_router().await;
         debug_command_router.cleanup_expired_responses().await;
     }
-    
+
     /// Get lazy component initialization status for debugging
     pub fn get_lazy_init_status(&self) -> serde_json::Value {
         self.lazy_components.get_initialization_status()
     }
-    
+
     /// Check if a tool should be cached
     #[inline(always)]
     fn is_tool_cacheable(&self, tool_name: &str) -> bool {
@@ -915,21 +927,29 @@ impl McpServer {
             match tool_name {
                 // Less common cacheable tools
                 "diagnostic_report" | "anomaly" | "debug" => true,
-                
+
                 // Non-cacheable tools (stateful or time-sensitive operations)
-                "experiment" | "screenshot" | "hypothesis" | "stress" | "replay" |
-                "orchestrate" | "pipeline" | "performance_dashboard" | 
-                "dead_letter_queue" | "checkpoint" | "bug_report" => false,
-                
+                "experiment"
+                | "screenshot"
+                | "hypothesis"
+                | "stress"
+                | "replay"
+                | "orchestrate"
+                | "pipeline"
+                | "performance_dashboard"
+                | "dead_letter_queue"
+                | "checkpoint"
+                | "bug_report" => false,
+
                 _ => false,
             }
         }
     }
-    
+
     /// Get cache tags for a tool to enable selective invalidation
     #[inline(always)]
     fn get_cache_tags_for_tool(&self, tool_name: &str) -> Vec<String> {
-#[cfg(feature = "caching")]
+        #[cfg(feature = "caching")]
         {
             // Pre-allocate common tag combinations to reduce allocations
             static ENTITY_GAME_TAGS: &[&str] = &["entity_data", "game_state"];
@@ -938,7 +958,7 @@ impl McpServer {
             static DIAGNOSTICS_TAGS: &[&str] = &["diagnostics"];
             static ANOMALY_TAGS: &[&str] = &["anomaly_data", "performance_data"];
             static DEBUG_TAGS: &[&str] = &["debug_data"];
-            
+
             // Optimize for most common tools
             match tool_name {
                 "observe" => ENTITY_GAME_TAGS.iter().map(|s| s.to_string()).collect(),
@@ -950,60 +970,60 @@ impl McpServer {
                 _ => Vec::new(),
             }
         }
-        
+
         #[cfg(not(feature = "caching"))]
         {
             // Zero-cost when caching is disabled
             Vec::new()
         }
     }
-    
+
     /// Get cache statistics
     pub async fn get_cache_statistics(&self) -> serde_json::Value {
         let stats = self.command_cache.get_statistics().await;
         serde_json::to_value(stats).unwrap_or_else(|_| serde_json::json!({}))
     }
-    
+
     /// Clear cache entries by tag
     pub async fn clear_cache_by_tag(&self, tag: &str) -> usize {
         self.command_cache.invalidate_by_tag(tag).await
     }
-    
+
     /// Clear all cache entries
     pub async fn clear_all_cache(&self) {
         self.command_cache.clear().await
     }
-    
+
     /// Get response pool statistics
     pub async fn get_response_pool_statistics(&self) -> serde_json::Value {
         let stats = self.response_pool.get_statistics().await;
         serde_json::to_value(stats).unwrap_or_else(|_| serde_json::json!({}))
     }
-    
+
     /// Serialize a response using the response pool for memory optimization
     pub async fn serialize_response_pooled(&self, response: &Value) -> Result<Vec<u8>> {
         self.response_pool.serialize_json(response).await
     }
-    
+
     /// Get profiling statistics
     pub async fn get_profiling_statistics(&self) -> serde_json::Value {
         let profiler = get_profiler();
         let stats = profiler.get_all_stats().await;
         serde_json::to_value(stats).unwrap_or_else(|_| serde_json::json!({}))
     }
-    
+
     /// Get hot path report
     pub async fn get_hot_path_report(&self) -> String {
         let profiler = get_profiler();
         profiler.generate_report().await
     }
-    
+
     /// Enable or disable profiling
     pub fn set_profiling_enabled(&self, enabled: bool) {
         let profiler = get_profiler();
         profiler.set_enabled(enabled);
     }
-    
+
     /// Clear profiling data
     pub async fn clear_profiling_data(&self) {
         let profiler = get_profiler();
@@ -1013,26 +1033,41 @@ impl McpServer {
     /// Handle get suggestions request
     async fn handle_get_suggestions(&self, arguments: Value) -> Result<Value> {
         let suggestion_engine = self.lazy_components.get_suggestion_engine().await;
-        
+
         // Extract context from arguments
         let session_id = arguments
             .get("session_id")
             .and_then(|id| id.as_str())
             .unwrap_or("default")
             .to_string();
-            
+
         let recent_commands: Vec<DebugCommand> = arguments
             .get("recent_commands")
             .and_then(|cmds| serde_json::from_value(cmds.clone()).ok())
             .unwrap_or_default();
-            
+
         let system_state = if let Some(state_data) = arguments.get("system_state") {
             SystemState {
-                entity_count: state_data.get("entity_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                fps: state_data.get("fps").and_then(|v| v.as_f64()).unwrap_or(60.0) as f32,
-                memory_mb: state_data.get("memory_mb").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                active_systems: state_data.get("active_systems").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                has_errors: state_data.get("has_errors").and_then(|v| v.as_bool()).unwrap_or(false),
+                entity_count: state_data
+                    .get("entity_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                fps: state_data
+                    .get("fps")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(60.0) as f32,
+                memory_mb: state_data
+                    .get("memory_mb")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32,
+                active_systems: state_data
+                    .get("active_systems")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                has_errors: state_data
+                    .get("has_errors")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
             }
         } else {
             // Default system state
@@ -1044,49 +1079,51 @@ impl McpServer {
                 has_errors: false,
             }
         };
-        
+
         let user_goal = arguments
             .get("user_goal")
             .and_then(|goal| goal.as_str())
             .map(|s| s.to_string());
-            
+
         let context = SuggestionContext {
             session_id,
             recent_commands,
             system_state,
             user_goal,
         };
-        
+
         let suggestions = suggestion_engine.generate_suggestions(&context).await;
-        
+
         Ok(json!({
             "suggestions": suggestions,
             "total_count": suggestions.len(),
             "context_session_id": context.session_id
         }))
     }
-    
+
     /// Handle track suggestion acceptance/success
     async fn handle_track_suggestion(&self, arguments: Value) -> Result<Value> {
         let suggestion_engine = self.lazy_components.get_suggestion_engine().await;
-        
+
         let suggestion_id = arguments
             .get("suggestion_id")
             .and_then(|id| id.as_str())
             .ok_or_else(|| Error::Validation("Missing 'suggestion_id' field".to_string()))?;
-            
+
         let accepted = arguments
             .get("accepted")
             .and_then(|a| a.as_bool())
             .unwrap_or(false);
-            
+
         let success = arguments
             .get("success")
             .and_then(|s| s.as_bool())
             .unwrap_or(false);
-        
-        suggestion_engine.track_suggestion_acceptance(suggestion_id, accepted, success).await;
-        
+
+        suggestion_engine
+            .track_suggestion_acceptance(suggestion_id, accepted, success)
+            .await;
+
         Ok(json!({
             "tracked": true,
             "suggestion_id": suggestion_id,
@@ -1094,22 +1131,22 @@ impl McpServer {
             "success": success
         }))
     }
-    
+
     /// Handle get learned patterns request
     async fn handle_get_patterns(&self, arguments: Value) -> Result<Value> {
         let pattern_system = self.lazy_components.get_pattern_learning_system().await;
-        
+
         let action = arguments
             .get("action")
             .and_then(|a| a.as_str())
             .unwrap_or("list");
-            
+
         match action {
             "list" => {
                 // Get recent patterns for a session (simplified implementation)
                 let sequence = vec![]; // In practice, get from current session
                 let patterns = pattern_system.find_matching_patterns(&sequence).await;
-                
+
                 Ok(json!({
                     "patterns": patterns,
                     "total_count": patterns.len()
@@ -1125,76 +1162,98 @@ impl McpServer {
                 let patterns_json = arguments
                     .get("patterns_json")
                     .and_then(|p| p.as_str())
-                    .ok_or_else(|| Error::Validation("Missing 'patterns_json' field".to_string()))?;
-                    
+                    .ok_or_else(|| {
+                        Error::Validation("Missing 'patterns_json' field".to_string())
+                    })?;
+
                 pattern_system.import_patterns(patterns_json).await?;
-                
+
                 Ok(json!({
                     "imported": true
                 }))
             }
-            _ => Err(Error::Validation(format!("Unknown patterns action: {}", action)))
+            _ => Err(Error::Validation(format!(
+                "Unknown patterns action: {}",
+                action
+            ))),
         }
     }
-    
+
     /// Handle workflow execution request
     async fn handle_execute_workflow(&self, arguments: Value) -> Result<Value> {
         let workflow_automation = self.lazy_components.get_workflow_automation().await;
-        
+
         let workflow_id = arguments
             .get("workflow_id")
             .and_then(|id| id.as_str())
             .ok_or_else(|| Error::Validation("Missing 'workflow_id' field".to_string()))?;
-            
+
         let session_id = arguments
             .get("session_id")
             .and_then(|id| id.as_str())
             .unwrap_or("default")
             .to_string();
-            
+
         // Extract user preferences if provided
         let preferences = if let Some(prefs_data) = arguments.get("preferences") {
             Some(UserPreferences {
-                automation_enabled: prefs_data.get("automation_enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-                preferred_scope: serde_json::from_value(prefs_data.get("preferred_scope").cloned().unwrap_or(json!("SafeCommands"))).unwrap_or(crate::workflow_automation::AutomationScope::SafeCommands),
-                require_confirmation: prefs_data.get("require_confirmation").and_then(|v| v.as_bool()).unwrap_or(true),
-                auto_rollback: prefs_data.get("auto_rollback").and_then(|v| v.as_bool()).unwrap_or(true),
+                automation_enabled: prefs_data
+                    .get("automation_enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+                preferred_scope: serde_json::from_value(
+                    prefs_data
+                        .get("preferred_scope")
+                        .cloned()
+                        .unwrap_or(json!("SafeCommands")),
+                )
+                .unwrap_or(crate::workflow_automation::AutomationScope::SafeCommands),
+                require_confirmation: prefs_data
+                    .get("require_confirmation")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+                auto_rollback: prefs_data
+                    .get("auto_rollback")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
             })
         } else {
             None
         };
-        
-        let result = workflow_automation.execute_workflow(workflow_id, session_id, preferences).await?;
-        
+
+        let result = workflow_automation
+            .execute_workflow(workflow_id, session_id, preferences)
+            .await?;
+
         Ok(serde_json::to_value(result)?)
     }
-    
+
     /// Handle workflow approval request
     async fn handle_approve_workflow(&self, arguments: Value) -> Result<Value> {
         let workflow_automation = self.lazy_components.get_workflow_automation().await;
-        
+
         let workflow_id = arguments
             .get("workflow_id")
             .and_then(|id| id.as_str())
             .ok_or_else(|| Error::Validation("Missing 'workflow_id' field".to_string()))?;
-            
+
         workflow_automation.approve_workflow(workflow_id).await?;
-        
+
         Ok(json!({
             "approved": true,
             "workflow_id": workflow_id
         }))
     }
-    
+
     /// Handle get workflows request
     async fn handle_get_workflows(&self, arguments: Value) -> Result<Value> {
         let workflow_automation = self.lazy_components.get_workflow_automation().await;
-        
+
         let action = arguments
             .get("action")
             .and_then(|a| a.as_str())
             .unwrap_or("list");
-            
+
         match action {
             "list" => {
                 let workflows = workflow_automation.get_workflows().await;
@@ -1204,25 +1263,30 @@ impl McpServer {
                 }))
             }
             "analyze" => {
-                let opportunities = workflow_automation.analyze_automation_opportunities().await?;
+                let opportunities = workflow_automation
+                    .analyze_automation_opportunities()
+                    .await?;
                 Ok(json!({
                     "automation_opportunities": opportunities,
                     "total_count": opportunities.len()
                 }))
             }
-            _ => Err(Error::Validation(format!("Unknown workflows action: {}", action)))
+            _ => Err(Error::Validation(format!(
+                "Unknown workflows action: {}",
+                action
+            ))),
         }
     }
 
     /// Handle hot reload operations
     async fn handle_hot_reload(&self, arguments: Value) -> Result<Value> {
         let hot_reload_system = self.lazy_components.get_hot_reload_system().await;
-        
+
         let action = arguments
             .get("action")
             .and_then(|a| a.as_str())
             .unwrap_or("status");
-            
+
         match action {
             "status" => {
                 let versions = hot_reload_system.get_model_versions().await;
@@ -1253,15 +1317,18 @@ impl McpServer {
                     "message": "Hot reload system stopped"
                 }))
             }
-            _ => Err(Error::Validation(format!("Unknown hot reload action: {}", action)))
+            _ => Err(Error::Validation(format!(
+                "Unknown hot reload action: {}",
+                action
+            ))),
         }
     }
-    
+
     /// Handle get model versions request
     async fn handle_get_model_versions(&self, _arguments: Value) -> Result<Value> {
         let hot_reload_system = self.lazy_components.get_hot_reload_system().await;
         let versions = hot_reload_system.get_model_versions().await;
-        
+
         Ok(json!({
             "model_versions": versions,
             "total_count": versions.len(),

@@ -1,14 +1,13 @@
 /// Debug Session Manager for maintaining context across debugging commands
-/// 
+///
 /// This module provides comprehensive session management including:
 /// - Session creation and lifecycle management
 /// - Command history with undo/redo support
 /// - World state checkpointing
 /// - Command replay with timing preservation
 /// - Session persistence across reconnections
-
 use crate::brp_messages::{DebugCommand, DebugResponse, SessionState};
-use crate::checkpoint::{Checkpoint, CheckpointManager, CheckpointConfig};
+use crate::checkpoint::{Checkpoint, CheckpointConfig, CheckpointManager};
 use crate::error::{Error, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -111,7 +110,7 @@ impl DebugSession {
         while self.command_history.len() >= constants::MAX_COMMAND_HISTORY_RETENTION {
             self.command_history.pop_front();
         }
-        
+
         self.command_history.push_back(entry);
         self.last_activity = Utc::now();
     }
@@ -119,11 +118,7 @@ impl DebugSession {
     /// Get command history in reverse chronological order
     pub fn get_recent_history(&self, limit: Option<usize>) -> Vec<&CommandHistoryEntry> {
         let max_count = limit.unwrap_or(100);
-        self.command_history
-            .iter()
-            .rev()
-            .take(max_count)
-            .collect()
+        self.command_history.iter().rev().take(max_count).collect()
     }
 
     /// Check if session should be cleaned up due to inactivity
@@ -146,7 +141,9 @@ impl DebugSession {
     /// Start command replay
     pub fn start_replay(&mut self, from_position: Option<usize>) -> Result<()> {
         if self.command_history.is_empty() {
-            return Err(Error::Validation("No command history to replay".to_string()));
+            return Err(Error::Validation(
+                "No command history to replay".to_string(),
+            ));
         }
 
         let start_pos = from_position.unwrap_or(0);
@@ -256,7 +253,8 @@ impl SessionManager {
 
         // Start cleanup task
         let sessions = Arc::clone(&self.sessions);
-        let cleanup_interval = Duration::from_secs((self.config.cleanup_interval_minutes * 60) as u64);
+        let cleanup_interval =
+            Duration::from_secs((self.config.cleanup_interval_minutes * 60) as u64);
 
         let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(cleanup_interval);
@@ -281,7 +279,10 @@ impl SessionManager {
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to acquire session lock for cleanup, retrying: {}", e);
+                        warn!(
+                            "Failed to acquire session lock for cleanup, retrying: {}",
+                            e
+                        );
                         // Continue to next iteration rather than crashing
                         continue;
                     }
@@ -299,22 +300,33 @@ impl SessionManager {
     }
 
     /// Create new session
-    pub async fn create_session(&self, name: String, description: Option<String>) -> Result<String> {
+    pub async fn create_session(
+        &self,
+        name: String,
+        description: Option<String>,
+    ) -> Result<String> {
         // Validate input
         if name.is_empty() {
-            return Err(Error::Validation("Session name cannot be empty".to_string()));
+            return Err(Error::Validation(
+                "Session name cannot be empty".to_string(),
+            ));
         }
-        
+
         if name.len() > constants::MAX_SESSION_NAME_LENGTH {
             return Err(Error::Validation(format!(
-                "Session name too long (max {} characters)", 
+                "Session name too long (max {} characters)",
                 constants::MAX_SESSION_NAME_LENGTH
             )));
         }
-        
+
         // Check for invalid characters that could cause issues
-        if name.chars().any(|c| c.is_control() || "/<>:|\"?*\\".contains(c)) {
-            return Err(Error::Validation("Session name contains invalid characters".to_string()));
+        if name
+            .chars()
+            .any(|c| c.is_control() || "/<>:|\"?*\\".contains(c))
+        {
+            return Err(Error::Validation(
+                "Session name contains invalid characters".to_string(),
+            ));
         }
 
         let mut sessions = self.sessions.write().await;
@@ -346,34 +358,40 @@ impl SessionManager {
     /// End session
     pub async fn end_session(&self, session_id: &str) -> Result<()> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(mut session) = sessions.remove(session_id) {
             session.state = SessionState::Ended;
             info!("Ended debug session: {}", session_id);
             Ok(())
         } else {
-            Err(Error::Validation(format!("Session not found: {}", session_id)))
+            Err(Error::Validation(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
     /// Resume session (change state to active)
     pub async fn resume_session(&self, session_id: &str) -> Result<()> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(session_id) {
             session.state = SessionState::Active;
             session.touch();
             info!("Resumed debug session: {}", session_id);
             Ok(())
         } else {
-            Err(Error::Validation(format!("Session not found: {}", session_id)))
+            Err(Error::Validation(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
     /// Create checkpoint for session
     pub async fn create_checkpoint(&self, session_id: &str, description: &str) -> Result<String> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(session_id) {
             // Create checkpoint with session state (clone to avoid borrow issues)
             let session_clone = session.clone();
@@ -387,7 +405,7 @@ impl SessionManager {
             );
 
             let checkpoint_id = checkpoint.id.clone();
-            
+
             {
                 let checkpoint_manager = self.checkpoint_manager.read().await;
                 checkpoint_manager.create_checkpoint(checkpoint).await?;
@@ -396,10 +414,16 @@ impl SessionManager {
             session.checkpoints.push(checkpoint_id.clone());
             session.touch();
 
-            info!("Created checkpoint for session {}: {}", session_id, checkpoint_id);
+            info!(
+                "Created checkpoint for session {}: {}",
+                session_id, checkpoint_id
+            );
             Ok(checkpoint_id)
         } else {
-            Err(Error::Validation(format!("Session not found: {}", session_id)))
+            Err(Error::Validation(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
@@ -415,7 +439,10 @@ impl SessionManager {
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.to_string(), restored_session);
 
-        info!("Restored session {} from checkpoint {}", session_id, checkpoint_id);
+        info!(
+            "Restored session {} from checkpoint {}",
+            session_id, checkpoint_id
+        );
         Ok(())
     }
 
@@ -429,9 +456,10 @@ impl SessionManager {
         correlation_id: String,
     ) -> Result<()> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(session_id) {
-            let success = response.is_some() && matches!(response, Some(DebugResponse::Success { .. }));
+            let success =
+                response.is_some() && matches!(response, Some(DebugResponse::Success { .. }));
             let error_message = if !success && response.is_some() {
                 Some(format!("{:?}", response))
             } else {
@@ -453,7 +481,10 @@ impl SessionManager {
             debug!("Recorded command in session: {}", session_id);
             Ok(())
         } else {
-            Err(Error::Validation(format!("Session not found: {}", session_id)))
+            Err(Error::Validation(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
@@ -464,7 +495,7 @@ impl SessionManager {
         limit: Option<usize>,
     ) -> Result<Vec<CommandHistoryEntry>> {
         let sessions = self.sessions.read().await;
-        
+
         if let Some(session) = sessions.get(session_id) {
             let history = session
                 .get_recent_history(limit)
@@ -473,27 +504,33 @@ impl SessionManager {
                 .collect();
             Ok(history)
         } else {
-            Err(Error::Validation(format!("Session not found: {}", session_id)))
+            Err(Error::Validation(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
     /// Start command replay for session
     pub async fn start_replay(&self, session_id: &str, from_position: Option<usize>) -> Result<()> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(session_id) {
             session.start_replay(from_position)?;
             info!("Started replay for session: {}", session_id);
             Ok(())
         } else {
-            Err(Error::Validation(format!("Session not found: {}", session_id)))
+            Err(Error::Validation(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
     /// Get next replay command
     pub async fn get_next_replay_command(&self, session_id: &str) -> Result<Option<DebugCommand>> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(session_id) {
             if let Some(entry) = session.next_replay_command() {
                 Ok(Some(entry.command.clone()))
@@ -501,20 +538,26 @@ impl SessionManager {
                 Ok(None)
             }
         } else {
-            Err(Error::Validation(format!("Session not found: {}", session_id)))
+            Err(Error::Validation(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
     /// Stop command replay
     pub async fn stop_replay(&self, session_id: &str) -> Result<()> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(session_id) {
             session.stop_replay();
             info!("Stopped replay for session: {}", session_id);
             Ok(())
         } else {
-            Err(Error::Validation(format!("Session not found: {}", session_id)))
+            Err(Error::Validation(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
@@ -559,10 +602,7 @@ impl SessionManager {
             serde_json::Value::Number(replaying_sessions.into()),
         );
 
-        let total_commands: usize = sessions
-            .values()
-            .map(|s| s.command_history.len())
-            .sum();
+        let total_commands: usize = sessions.values().map(|s| s.command_history.len()).sum();
 
         stats.insert(
             "total_commands_recorded".to_string(),
@@ -611,7 +651,10 @@ mod tests {
         manager.start().await.unwrap();
 
         let session_id = manager
-            .create_session("Test Session".to_string(), Some("Test description".to_string()))
+            .create_session(
+                "Test Session".to_string(),
+                Some("Test description".to_string()),
+            )
             .await
             .unwrap();
 
@@ -651,7 +694,10 @@ mod tests {
             .await
             .unwrap();
 
-        let history = manager.get_command_history(&session_id, Some(10)).await.unwrap();
+        let history = manager
+            .get_command_history(&session_id, Some(10))
+            .await
+            .unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].correlation_id, "test-correlation-id");
         assert!(history[0].success);

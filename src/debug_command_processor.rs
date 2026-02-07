@@ -1,7 +1,5 @@
 /// Debug command processor infrastructure for extensible debugging operations
-use crate::brp_messages::{
-    DebugCommand, DebugResponse,
-};
+use crate::brp_messages::{DebugCommand, DebugResponse};
 use crate::error::{Error, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -30,13 +28,13 @@ pub const METRICS_HISTORY_SIZE: usize = 1000;
 pub trait DebugCommandProcessor: Send + Sync {
     /// Process a debug command and return a response
     async fn process(&self, command: DebugCommand) -> Result<DebugResponse>;
-    
+
     /// Validate if the command can be processed
     async fn validate(&self, command: &DebugCommand) -> Result<()>;
-    
+
     /// Get the estimated processing time for a command
     fn estimate_processing_time(&self, command: &DebugCommand) -> Duration;
-    
+
     /// Check if the processor supports a specific command type
     fn supports_command(&self, command: &DebugCommand) -> bool;
 }
@@ -73,12 +71,12 @@ impl DebugCommandRequest {
             response_ttl: Duration::from_secs(60), // 1 minute TTL for responses
         }
     }
-    
+
     /// Check if the command has timed out
     pub fn is_timed_out(&self) -> bool {
         self.received_at.elapsed() > self.timeout
     }
-    
+
     /// Get remaining time before timeout
     pub fn remaining_time(&self) -> Option<Duration> {
         let elapsed = self.received_at.elapsed();
@@ -108,7 +106,7 @@ impl DebugCommandRouter {
     /// Create a new debug command router
     pub fn new() -> Self {
         let response_map = Arc::new(RwLock::new(ResponseCorrelationMap::new()));
-        
+
         // Start automatic cleanup task
         let response_map_clone = response_map.clone();
         let cleanup_handle = tokio::spawn(async move {
@@ -118,7 +116,7 @@ impl DebugCommandRouter {
                 response_map_clone.write().await.cleanup_expired();
             }
         });
-        
+
         Self {
             processors: Arc::new(RwLock::new(HashMap::new())),
             command_queue: Arc::new(RwLock::new(PriorityQueue::new())),
@@ -127,7 +125,7 @@ impl DebugCommandRouter {
             _cleanup_handle: cleanup_handle,
         }
     }
-    
+
     /// Register a command processor
     pub async fn register_processor(
         &self,
@@ -137,7 +135,7 @@ impl DebugCommandRouter {
         let mut processors = self.processors.write().await;
         processors.insert(name, processor);
     }
-    
+
     /// Queue a debug command for processing
     pub async fn queue_command(&self, request: DebugCommandRequest) -> Result<()> {
         // Check queue size limit
@@ -145,11 +143,12 @@ impl DebugCommandRouter {
             let queue = self.command_queue.read().await;
             if queue.len() >= MAX_QUEUE_SIZE {
                 return Err(Error::DebugError(format!(
-                    "Command queue full (max: {})", MAX_QUEUE_SIZE
+                    "Command queue full (max: {})",
+                    MAX_QUEUE_SIZE
                 )));
             }
         }
-        
+
         // Validate the command first
         if let Some(processor) = self.find_processor(&request.command).await {
             processor.validate(&request.command).await?;
@@ -158,17 +157,17 @@ impl DebugCommandRouter {
                 "No processor found for command".to_string(),
             ));
         }
-        
+
         // Add comprehensive validation
         self.validate_command_args(&request.command)?;
-        
+
         // Add to priority queue
         let mut queue = self.command_queue.write().await;
         queue.push(request);
-        
+
         Ok(())
     }
-    
+
     /// Validate command arguments to prevent system crashes
     fn validate_command_args(&self, command: &DebugCommand) -> Result<()> {
         match command {
@@ -181,65 +180,95 @@ impl DebugCommandRouter {
                     return Err(Error::DebugError("Entity ID too large".to_string()));
                 }
             }
-            DebugCommand::ProfileSystem { system_name, duration_ms, .. } => {
+            DebugCommand::ProfileSystem {
+                system_name,
+                duration_ms,
+                ..
+            } => {
                 if system_name.is_empty() {
                     return Err(Error::DebugError("System name cannot be empty".to_string()));
                 }
                 if let Some(duration) = duration_ms {
-                    if *duration > 300_000 {  // 5 minutes max
-                        return Err(Error::DebugError("Profile duration too long (max 5 minutes)".to_string()));
+                    if *duration > 300_000 {
+                        // 5 minutes max
+                        return Err(Error::DebugError(
+                            "Profile duration too long (max 5 minutes)".to_string(),
+                        ));
                     }
                 }
             }
             DebugCommand::ExecuteQuery { query, limit, .. } => {
                 if query.filter.with.as_ref().map_or(false, |w| w.len() > 20) {
-                    return Err(Error::DebugError("Too many components in query (max 20)".to_string()));
+                    return Err(Error::DebugError(
+                        "Too many components in query (max 20)".to_string(),
+                    ));
                 }
                 if let Some(l) = limit {
                     if *l > 10_000 {
-                        return Err(Error::DebugError("Query limit too high (max 10,000)".to_string()));
+                        return Err(Error::DebugError(
+                            "Query limit too high (max 10,000)".to_string(),
+                        ));
                     }
                 }
             }
-            DebugCommand::ProfileMemory { target_systems, duration_seconds, .. } => {
+            DebugCommand::ProfileMemory {
+                target_systems,
+                duration_seconds,
+                ..
+            } => {
                 if let Some(systems) = target_systems {
                     if systems.len() > 100 {
-                        return Err(Error::DebugError("Too many target systems (max 100)".to_string()));
+                        return Err(Error::DebugError(
+                            "Too many target systems (max 100)".to_string(),
+                        ));
                     }
                 }
                 if let Some(duration) = duration_seconds {
-                    if *duration > 86400 { // 24 hours max
-                        return Err(Error::DebugError("Duration too long (max 24 hours)".to_string()));
+                    if *duration > 86400 {
+                        // 24 hours max
+                        return Err(Error::DebugError(
+                            "Duration too long (max 24 hours)".to_string(),
+                        ));
                     }
                 }
             }
-            DebugCommand::DetectMemoryLeaks { target_systems } |
-            DebugCommand::AnalyzeMemoryTrends { target_systems } => {
+            DebugCommand::DetectMemoryLeaks { target_systems }
+            | DebugCommand::AnalyzeMemoryTrends { target_systems } => {
                 if let Some(systems) = target_systems {
                     if systems.len() > 100 {
-                        return Err(Error::DebugError("Too many target systems (max 100)".to_string()));
+                        return Err(Error::DebugError(
+                            "Too many target systems (max 100)".to_string(),
+                        ));
                     }
                 }
             }
             DebugCommand::StopMemoryProfiling { session_id } => {
                 if let Some(id) = session_id {
                     if id.len() > 100 {
-                        return Err(Error::DebugError("Session ID too long (max 100 chars)".to_string()));
+                        return Err(Error::DebugError(
+                            "Session ID too long (max 100 chars)".to_string(),
+                        ));
                     }
                 }
             }
             DebugCommand::Custom { name, .. } => {
                 if name.len() > 100 {
-                    return Err(Error::DebugError("Custom command name too long (max 100 chars)".to_string()));
+                    return Err(Error::DebugError(
+                        "Custom command name too long (max 100 chars)".to_string(),
+                    ));
                 }
             }
-            DebugCommand::InspectBatch { entity_ids, limit, .. } => {
+            DebugCommand::InspectBatch {
+                entity_ids, limit, ..
+            } => {
                 if entity_ids.is_empty() {
-                    return Err(Error::DebugError("Entity IDs list cannot be empty".to_string()));
+                    return Err(Error::DebugError(
+                        "Entity IDs list cannot be empty".to_string(),
+                    ));
                 }
                 if entity_ids.len() > crate::entity_inspector::MAX_BATCH_SIZE {
                     return Err(Error::DebugError(format!(
-                        "Too many entities in batch (max: {})", 
+                        "Too many entities in batch (max: {})",
                         crate::entity_inspector::MAX_BATCH_SIZE
                     )));
                 }
@@ -253,7 +282,7 @@ impl DebugCommandRouter {
                 if let Some(l) = limit {
                     if *l > crate::entity_inspector::MAX_BATCH_SIZE {
                         return Err(Error::DebugError(format!(
-                            "Batch limit too high (max: {})", 
+                            "Batch limit too high (max: {})",
                             crate::entity_inspector::MAX_BATCH_SIZE
                         )));
                     }
@@ -263,7 +292,7 @@ impl DebugCommandRouter {
         }
         Ok(())
     }
-    
+
     /// Process the next command in the queue
     pub async fn process_next(&self) -> Option<Result<(String, DebugResponse)>> {
         // Get next command from priority queue
@@ -271,17 +300,15 @@ impl DebugCommandRouter {
             let mut queue = self.command_queue.write().await;
             queue.pop()
         }?;
-        
+
         // Check for timeout
         if request.is_timed_out() {
-            return Some(Err(Error::Timeout(
-                "Debug command timed out".to_string(),
-            )));
+            return Some(Err(Error::Timeout("Debug command timed out".to_string())));
         }
-        
+
         // Record start time for metrics
         let start_time = Instant::now();
-        
+
         // Find and execute processor
         let result = if let Some(processor) = self.find_processor(&request.command).await {
             processor.process(request.command.clone()).await
@@ -290,11 +317,11 @@ impl DebugCommandRouter {
                 "No processor found for command".to_string(),
             ))
         };
-        
+
         // Update metrics
         let duration = start_time.elapsed();
         self.update_metrics(duration, result.is_ok()).await;
-        
+
         // Store response with TTL
         if let Ok(response) = &result {
             self.response_map.write().await.store(
@@ -303,27 +330,30 @@ impl DebugCommandRouter {
                 request.response_ttl,
             );
         }
-        
+
         Some(result.map(|r| (request.correlation_id, r)))
     }
-    
+
     /// Get a response by correlation ID
     pub async fn get_response(&self, correlation_id: &str) -> Option<DebugResponse> {
         self.response_map.read().await.get(correlation_id)
     }
-    
+
     /// Clean up expired responses
     pub async fn cleanup_expired_responses(&self) {
         self.response_map.write().await.cleanup_expired();
     }
-    
+
     /// Get current metrics
     pub async fn get_metrics(&self) -> DebugMetrics {
         self.metrics.read().await.clone()
     }
-    
+
     /// Find a processor for a command
-    async fn find_processor(&self, command: &DebugCommand) -> Option<Arc<dyn DebugCommandProcessor>> {
+    async fn find_processor(
+        &self,
+        command: &DebugCommand,
+    ) -> Option<Arc<dyn DebugCommandProcessor>> {
         let processors = self.processors.read().await;
         for processor in processors.values() {
             if processor.supports_command(command) {
@@ -332,12 +362,12 @@ impl DebugCommandRouter {
         }
         None
     }
-    
+
     /// Route a debug command request for processing
     pub async fn route(&self, request: DebugCommandRequest) -> Result<DebugResponse> {
         // Queue the command
         self.queue_command(request.clone()).await?;
-        
+
         // Process immediately and return result
         if let Some(result) = self.process_next().await {
             match result {
@@ -346,7 +376,8 @@ impl DebugCommandRouter {
                         Ok(response)
                     } else {
                         // Store and retrieve by correlation ID
-                        self.get_response(&request.correlation_id).await
+                        self.get_response(&request.correlation_id)
+                            .await
                             .ok_or_else(|| Error::DebugError("Response not found".to_string()))
                     }
                 }
@@ -362,10 +393,12 @@ impl DebugCommandRouter {
         if let Some(processor) = self.find_processor(command).await {
             processor.validate(command).await
         } else {
-            Err(Error::DebugError("No processor found for command".to_string()))
+            Err(Error::DebugError(
+                "No processor found for command".to_string(),
+            ))
         }
     }
-    
+
     /// Update metrics after command processing
     async fn update_metrics(&self, duration: Duration, success: bool) {
         let mut metrics = self.metrics.write().await;
@@ -383,19 +416,19 @@ where
     T: Clone + Ord,
 {
     fn new() -> Self {
-        Self { 
-            items: std::collections::BinaryHeap::new() 
+        Self {
+            items: std::collections::BinaryHeap::new(),
         }
     }
-    
+
     fn push(&mut self, item: T) {
         self.items.push(item);
     }
-    
+
     fn pop(&mut self) -> Option<T> {
         self.items.pop()
     }
-    
+
     fn len(&self) -> usize {
         self.items.len()
     }
@@ -435,29 +468,28 @@ impl ResponseCorrelationMap {
             responses: HashMap::new(),
         }
     }
-    
+
     fn store(&mut self, correlation_id: String, response: DebugResponse, ttl: Duration) {
-        self.responses.insert(
-            correlation_id,
-            (response, Instant::now(), ttl),
-        );
+        self.responses
+            .insert(correlation_id, (response, Instant::now(), ttl));
     }
-    
+
     fn get(&self, correlation_id: &str) -> Option<DebugResponse> {
-        self.responses.get(correlation_id).and_then(|(response, stored_at, ttl)| {
-            if stored_at.elapsed() <= *ttl {
-                Some(response.clone())
-            } else {
-                None
-            }
-        })
+        self.responses
+            .get(correlation_id)
+            .and_then(|(response, stored_at, ttl)| {
+                if stored_at.elapsed() <= *ttl {
+                    Some(response.clone())
+                } else {
+                    None
+                }
+            })
     }
-    
+
     fn cleanup_expired(&mut self) {
         let now = Instant::now();
-        self.responses.retain(|_, (_, stored_at, ttl)| {
-            now.duration_since(*stored_at) <= *ttl
-        });
+        self.responses
+            .retain(|_, (_, stored_at, ttl)| now.duration_since(*stored_at) <= *ttl);
     }
 }
 
@@ -492,44 +524,44 @@ impl DebugMetrics {
             processing_times: Vec::with_capacity(METRICS_HISTORY_SIZE),
         }
     }
-    
+
     fn record_command(&mut self, duration: Duration, success: bool) {
         let duration_us = duration.as_micros() as u64;
-        
+
         self.total_commands += 1;
         if success {
             self.successful_commands += 1;
         } else {
             self.failed_commands += 1;
         }
-        
+
         // Update min/max
         self.min_processing_time_us = self.min_processing_time_us.min(duration_us);
         self.max_processing_time_us = self.max_processing_time_us.max(duration_us);
-        
+
         // Update average
         self.processing_times.push(duration_us);
         if self.processing_times.len() > METRICS_HISTORY_SIZE {
             self.processing_times.remove(0);
         }
-        
+
         let sum: u64 = self.processing_times.iter().sum();
         self.avg_processing_time_us = sum / self.processing_times.len() as u64;
     }
-    
+
     /// Get percentile processing time
     pub fn get_percentile(&self, percentile: f32) -> u64 {
         if self.processing_times.is_empty() {
             return 0;
         }
-        
+
         let mut sorted = self.processing_times.clone();
         sorted.sort_unstable();
-        
+
         let index = ((percentile / 100.0) * sorted.len() as f32) as usize;
         sorted[index.min(sorted.len() - 1)]
     }
-    
+
     /// Check if performance is within target (<1ms per command average)
     pub fn is_within_performance_target(&self) -> bool {
         self.avg_processing_time_us < 1000 // 1ms = 1000us
@@ -553,25 +585,38 @@ impl EntityInspectionProcessor {
 impl DebugCommandProcessor for EntityInspectionProcessor {
     async fn process(&self, command: DebugCommand) -> Result<DebugResponse> {
         match command {
-            DebugCommand::InspectEntity { entity_id, include_metadata, include_relationships } => {
-                self.inspector.inspect_entity(
-                    entity_id,
-                    include_metadata.unwrap_or(false),
-                    include_relationships.unwrap_or(false),
-                ).await
+            DebugCommand::InspectEntity {
+                entity_id,
+                include_metadata,
+                include_relationships,
+            } => {
+                self.inspector
+                    .inspect_entity(
+                        entity_id,
+                        include_metadata.unwrap_or(false),
+                        include_relationships.unwrap_or(false),
+                    )
+                    .await
             }
-            DebugCommand::InspectBatch { entity_ids, include_metadata, include_relationships, limit } => {
-                self.inspector.inspect_batch(
-                    entity_ids,
-                    include_metadata.unwrap_or(false),
-                    include_relationships.unwrap_or(false),
-                    limit,
-                ).await
+            DebugCommand::InspectBatch {
+                entity_ids,
+                include_metadata,
+                include_relationships,
+                limit,
+            } => {
+                self.inspector
+                    .inspect_batch(
+                        entity_ids,
+                        include_metadata.unwrap_or(false),
+                        include_relationships.unwrap_or(false),
+                        limit,
+                    )
+                    .await
             }
             _ => Err(Error::DebugError("Unsupported command".to_string())),
         }
     }
-    
+
     async fn validate(&self, command: &DebugCommand) -> Result<()> {
         match command {
             DebugCommand::InspectEntity { entity_id, .. } => {
@@ -583,9 +628,13 @@ impl DebugCommandProcessor for EntityInspectionProcessor {
                     Ok(())
                 }
             }
-            DebugCommand::InspectBatch { entity_ids, limit, .. } => {
+            DebugCommand::InspectBatch {
+                entity_ids, limit, ..
+            } => {
                 if entity_ids.is_empty() {
-                    return Err(Error::DebugError("Entity IDs list cannot be empty".to_string()));
+                    return Err(Error::DebugError(
+                        "Entity IDs list cannot be empty".to_string(),
+                    ));
                 }
                 if entity_ids.contains(&0) {
                     return Err(Error::DebugError("Invalid entity ID: 0".to_string()));
@@ -596,7 +645,7 @@ impl DebugCommandProcessor for EntityInspectionProcessor {
                 let actual_limit = limit.unwrap_or(crate::entity_inspector::MAX_BATCH_SIZE);
                 if actual_limit > crate::entity_inspector::MAX_BATCH_SIZE {
                     return Err(Error::DebugError(format!(
-                        "Batch limit too high (max: {})", 
+                        "Batch limit too high (max: {})",
                         crate::entity_inspector::MAX_BATCH_SIZE
                     )));
                 }
@@ -605,101 +654,95 @@ impl DebugCommandProcessor for EntityInspectionProcessor {
             _ => Ok(()),
         }
     }
-    
+
     fn estimate_processing_time(&self, _command: &DebugCommand) -> Duration {
         Duration::from_millis(10) // Entity inspection is typically fast
     }
-    
+
     fn supports_command(&self, command: &DebugCommand) -> bool {
-        matches!(command, DebugCommand::InspectEntity { .. } | DebugCommand::InspectBatch { .. })
+        matches!(
+            command,
+            DebugCommand::InspectEntity { .. } | DebugCommand::InspectBatch { .. }
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_debug_command_request_creation() {
         let command = DebugCommand::GetStatus;
-        let request = DebugCommandRequest::new(
-            command.clone(),
-            "test-correlation".to_string(),
-            Some(8),
-        );
-        
+        let request =
+            DebugCommandRequest::new(command.clone(), "test-correlation".to_string(), Some(8));
+
         assert_eq!(request.correlation_id, "test-correlation");
         assert_eq!(request.priority, 8);
         assert!(!request.is_timed_out());
         assert!(request.remaining_time().is_some());
     }
-    
+
     #[tokio::test]
     async fn test_priority_queue_ordering() {
         let mut queue = PriorityQueue::new();
-        
-        let low_priority = DebugCommandRequest::new(
-            DebugCommand::GetStatus,
-            "low".to_string(),
-            Some(1),
-        );
-        
-        let high_priority = DebugCommandRequest::new(
-            DebugCommand::GetStatus,
-            "high".to_string(),
-            Some(9),
-        );
-        
+
+        let low_priority =
+            DebugCommandRequest::new(DebugCommand::GetStatus, "low".to_string(), Some(1));
+
+        let high_priority =
+            DebugCommandRequest::new(DebugCommand::GetStatus, "high".to_string(), Some(9));
+
         queue.push(low_priority.clone());
         queue.push(high_priority.clone());
-        
+
         // High priority should come first
         let first = queue.pop().unwrap();
         assert_eq!(first.correlation_id, "high");
-        
+
         let second = queue.pop().unwrap();
         assert_eq!(second.correlation_id, "low");
     }
-    
+
     #[tokio::test]
     async fn test_response_correlation_ttl() {
         let mut map = ResponseCorrelationMap::new();
-        
+
         let response = DebugResponse::Status {
             version: "1.0.0".to_string(),
             active_sessions: 0,
             command_queue_size: 0,
             performance_overhead_percent: 0.0,
         };
-        
+
         map.store(
             "test-id".to_string(),
             response.clone(),
             Duration::from_millis(100),
         );
-        
+
         // Should be available immediately
         assert!(map.get("test-id").is_some());
-        
+
         // Should expire after TTL
         tokio::time::sleep(Duration::from_millis(150)).await;
         assert!(map.get("test-id").is_none());
     }
-    
+
     #[test]
     fn test_metrics_recording() {
         let mut metrics = DebugMetrics::new();
-        
+
         metrics.record_command(Duration::from_micros(500), true);
         metrics.record_command(Duration::from_micros(1500), false);
         metrics.record_command(Duration::from_micros(800), true);
-        
+
         assert_eq!(metrics.total_commands, 3);
         assert_eq!(metrics.successful_commands, 2);
         assert_eq!(metrics.failed_commands, 1);
         assert_eq!(metrics.min_processing_time_us, 500);
         assert_eq!(metrics.max_processing_time_us, 1500);
-        
+
         // Should be within performance target (avg < 1ms)
         assert!(metrics.is_within_performance_target()); // avg is ~933us which is < 1000us
     }

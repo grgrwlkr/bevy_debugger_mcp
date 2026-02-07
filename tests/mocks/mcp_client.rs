@@ -1,21 +1,20 @@
 /// Mock MCP Client for Integration Testing
-/// 
+///
 /// This module provides a mock MCP client that simulates Claude Code interactions
 /// without requiring actual MCP server connections. Used for testing MCP protocol
 /// compliance and tool orchestration.
-
 use bevy_debugger_mcp::{
-    mcp_server::McpServer,
     config::Config,
     error::{Error, Result},
+    mcp_server::McpServer,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
-use tracing::{info, debug, warn, error};
+use tracing::{debug, error, info, warn};
 
 /// Mock MCP client that simulates Claude Code interactions
 pub struct MockMcpClient {
@@ -55,12 +54,12 @@ struct ToolCall {
 impl MockMcpClient {
     /// Create a new mock MCP client
     pub async fn new(config: Config) -> Result<Self> {
-        let brp_client = Arc::new(RwLock::new(
-            bevy_debugger_mcp::brp_client::BrpClient::new(&config)
-        ));
-        
+        let brp_client = Arc::new(RwLock::new(bevy_debugger_mcp::brp_client::BrpClient::new(
+            &config,
+        )));
+
         let server = Arc::new(McpServer::new(config, brp_client));
-        
+
         let tools = vec![
             ToolDefinition {
                 name: "observe".to_string(),
@@ -105,7 +104,7 @@ impl MockMcpClient {
                             "description": "Time in milliseconds to wait before taking screenshot"
                         },
                         "capture_delay": {
-                            "type": "integer", 
+                            "type": "integer",
                             "description": "Additional delay in milliseconds before screenshot capture"
                         },
                         "wait_for_render": {
@@ -204,20 +203,24 @@ impl MockMcpClient {
     pub async fn initialize(&self) -> Result<Value> {
         let mut state = self.session_state.lock().await;
         state.initialized = true;
-        
+
         info!("Mock MCP client initialized");
         Ok(self.capabilities.clone())
     }
 
     /// List available tools (simulates tools/list)
     pub async fn list_tools(&self) -> Result<Value> {
-        let tools_json: Vec<Value> = self.tools.iter().map(|tool| {
-            json!({
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.input_schema
+        let tools_json: Vec<Value> = self
+            .tools
+            .iter()
+            .map(|tool| {
+                json!({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.input_schema
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(json!({
             "tools": tools_json
@@ -226,26 +229,27 @@ impl MockMcpClient {
 
     /// Call a tool (simulates tools/call)
     pub async fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<Value> {
-        self.call_tool_with_timeout(tool_name, arguments, Duration::from_secs(10)).await
+        self.call_tool_with_timeout(tool_name, arguments, Duration::from_secs(10))
+            .await
     }
 
     /// Call a tool with custom timeout
     pub async fn call_tool_with_timeout(
-        &self, 
-        tool_name: &str, 
-        arguments: Value, 
-        timeout_duration: Duration
+        &self,
+        tool_name: &str,
+        arguments: Value,
+        timeout_duration: Duration,
     ) -> Result<Value> {
         let start_time = std::time::Instant::now();
         let timestamp = std::time::SystemTime::now();
-        
+
         debug!("Calling tool '{}' with args: {}", tool_name, arguments);
 
         // Validate tool exists
         if !self.tools.iter().any(|t| t.name == tool_name) {
             let error = format!("Unknown tool: {}", tool_name);
             error!("{}", error);
-            
+
             let mut state = self.session_state.lock().await;
             state.errors_encountered.push(error.clone());
             state.tool_calls_made.push(ToolCall {
@@ -255,15 +259,16 @@ impl MockMcpClient {
                 duration_ms: start_time.elapsed().as_millis(),
                 timestamp,
             });
-            
+
             return Err(Error::Validation(error));
         }
 
         // Execute the tool call with timeout
         let result = timeout(
             timeout_duration,
-            self.server.handle_tool_call(tool_name, arguments.clone())
-        ).await;
+            self.server.handle_tool_call(tool_name, arguments.clone()),
+        )
+        .await;
 
         let duration_ms = start_time.elapsed().as_millis();
 
@@ -277,7 +282,10 @@ impl MockMcpClient {
                 Err(e.to_string())
             }
             Err(_) => {
-                let error = format!("Tool call '{}' timed out after {:?}", tool_name, timeout_duration);
+                let error = format!(
+                    "Tool call '{}' timed out after {:?}",
+                    tool_name, timeout_duration
+                );
                 error!("{}", error);
                 Err(error)
             }
@@ -294,7 +302,9 @@ impl MockMcpClient {
         });
 
         if response.is_err() {
-            state.errors_encountered.push(response.clone().err().unwrap());
+            state
+                .errors_encountered
+                .push(response.clone().err().unwrap());
         }
 
         response.map_err(|e| Error::Validation(e))
@@ -329,8 +339,14 @@ impl MockMcpClient {
         let test_scenarios = vec![
             ("observe", json!({"query": "entities with Transform"})),
             ("experiment", json!({"type": "performance_test"})),
-            ("screenshot", json!({"path": "/tmp/test_screenshot.png", "description": "Test screenshot"})),
-            ("hypothesis", json!({"hypothesis": "Player movement affects frame rate"})),
+            (
+                "screenshot",
+                json!({"path": "/tmp/test_screenshot.png", "description": "Test screenshot"}),
+            ),
+            (
+                "hypothesis",
+                json!({"hypothesis": "Player movement affects frame rate"}),
+            ),
             ("stress", json!({"type": "entity_spawn", "count": 100})),
             ("replay", json!({"session_id": "test_session_123"})),
             ("anomaly", json!({"metric": "frame_time"})),
@@ -350,13 +366,16 @@ impl MockMcpClient {
         }
 
         report.session_end = Some(std::time::SystemTime::now());
-        report.total_duration = report.session_end
+        report.total_duration = report
+            .session_end
             .unwrap()
             .duration_since(report.session_start)
             .unwrap_or_default();
 
-        info!("Debugging session completed: {} successful, {} failed", 
-              report.successful_tool_calls, report.failed_tool_calls);
+        info!(
+            "Debugging session completed: {} successful, {} failed",
+            report.successful_tool_calls, report.failed_tool_calls
+        );
 
         Ok(report)
     }
@@ -364,19 +383,22 @@ impl MockMcpClient {
     /// Get session statistics
     pub async fn get_session_stats(&self) -> SessionStats {
         let state = self.session_state.lock().await;
-        
-        let successful_calls = state.tool_calls_made
+
+        let successful_calls = state
+            .tool_calls_made
             .iter()
             .filter(|call| call.response.is_ok())
             .count();
-            
+
         let failed_calls = state.tool_calls_made.len() - successful_calls;
-        
+
         let avg_duration = if !state.tool_calls_made.is_empty() {
-            state.tool_calls_made
+            state
+                .tool_calls_made
                 .iter()
                 .map(|call| call.duration_ms)
-                .sum::<u128>() as f64 / state.tool_calls_made.len() as f64
+                .sum::<u128>() as f64
+                / state.tool_calls_made.len() as f64
         } else {
             0.0
         };
@@ -401,23 +423,23 @@ impl MockMcpClient {
     pub async fn reset_session(&self) {
         let mut state = self.session_state.lock().await;
         *state = SessionState::default();
-        
+
         let mut counter = self.request_id_counter.lock().await;
         *counter = 1;
-        
+
         info!("Mock MCP client session reset");
     }
 
     /// Validate MCP protocol compliance
     pub async fn validate_protocol_compliance(&self) -> ProtocolCompliance {
         let mut compliance = ProtocolCompliance::default();
-        
+
         // Test initialize
         compliance.supports_initialize = self.initialize().await.is_ok();
-        
+
         // Test tools/list
         compliance.supports_tools_list = self.list_tools().await.is_ok();
-        
+
         // Test tools/call for each tool
         let mut working_tools = 0;
         for tool in &self.tools {
@@ -426,13 +448,12 @@ impl MockMcpClient {
                 working_tools += 1;
             }
         }
-        
+
         compliance.tools_callable = working_tools;
         compliance.total_tools = self.tools.len();
-        compliance.protocol_compliant = compliance.supports_initialize 
-            && compliance.supports_tools_list 
-            && working_tools > 0;
-        
+        compliance.protocol_compliant =
+            compliance.supports_initialize && compliance.supports_tools_list && working_tools > 0;
+
         compliance
     }
 }
@@ -493,7 +514,7 @@ mod tests {
 
         let client = MockMcpClient::new(config).await.unwrap();
         let result = client.initialize().await.unwrap();
-        
+
         assert!(result.get("capabilities").is_some());
         assert!(result.get("serverInfo").is_some());
     }
@@ -505,16 +526,16 @@ mod tests {
 
         let client = MockMcpClient::new(config).await.unwrap();
         let result = client.list_tools().await.unwrap();
-        
+
         let tools = result.get("tools").unwrap().as_array().unwrap();
         assert!(tools.len() >= 7);
-        
+
         // Verify essential tools are present
         let tool_names: Vec<&str> = tools
             .iter()
             .map(|t| t.get("name").unwrap().as_str().unwrap())
             .collect();
-            
+
         assert!(tool_names.contains(&"observe"));
         assert!(tool_names.contains(&"experiment"));
         assert!(tool_names.contains(&"screenshot"));
@@ -527,7 +548,7 @@ mod tests {
 
         let client = MockMcpClient::new(config).await.unwrap();
         let report = client.simulate_debugging_session().await.unwrap();
-        
+
         assert!(report.initialization_successful);
         assert!(report.tools_listed_successfully);
         assert!(report.available_tools_count >= 7);
