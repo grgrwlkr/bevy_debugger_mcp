@@ -108,6 +108,7 @@ axum = { version = "0.7", features = ["macros", "json"] }
 
 # Optional Bevy dependency for visual overlays and reflection
 bevy = { version = "0.16", features = ["default", "bevy_remote"], optional = true }
+reqwest = "0.13.2"
 
 [features]
 # Default features - minimal overhead

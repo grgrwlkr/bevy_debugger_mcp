@@ -304,50 +304,50 @@ pub fn setup_claude(force: bool) -> Result<(), Box<dyn std::error::Error>> {
 pub fn test_connection(host: &str, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", format!("🔌 Testing connection to {}:{}...", host, port).blue().bold());
     
-    use std::time::Duration;
-    use tokio_tungstenite::connect_async;
-    use tokio::time::timeout;
-    
     let rt = tokio::runtime::Runtime::new()?;
     
     rt.block_on(async {
-        let url = format!("ws://{}:{}", host, port);
-        
-        match timeout(Duration::from_secs(5), connect_async(&url)).await {
-            Ok(Ok((mut ws, _))) => {
+        let url = format!("http://{}:{}", host, port);
+        let client = reqwest::Client::new();
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "method": "rpc.discover",
+            "id": 0
+        });
+
+        match client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(payload.to_string())
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {
+                let text = response.text().await.unwrap_or_default();
                 println!("{} Connected successfully!", "✓".green());
-                
-                // Try to send a simple request
-                use tokio_tungstenite::tungstenite::Message;
-                let test_msg = json!({
-                    "method": "bevy/list",
-                    "params": {}
-                });
-                
-                ws.send(Message::Text(test_msg.to_string())).await?;
-                println!("{} Sent test message", "✓".green());
-                
-                if let Some(Ok(response)) = ws.next().await {
-                    println!("{} Received response: {:?}", "✓".green(), response);
-                }
-                
+                println!("{} Received response: {}", "✓".green(), text);
                 println!();
                 println!("{}", "✅ Connection test successful!".green().bold());
                 println!("Your Bevy game is ready for debugging.");
             }
-            Ok(Err(e)) => {
+            Ok(response) => {
+                let status = response.status();
+                let text = response.text().await.unwrap_or_default();
+                println!("{} Connection failed: HTTP {}", "✗".red(), status);
+                println!("Response: {}", text);
+                println!();
+                println!("Make sure:");
+                println!("  • Your Bevy game is running");
+                println!("  • RemotePlugin and RemoteHttpPlugin are added to your app");
+                println!("  • The correct port is specified");
+            }
+            Err(e) => {
                 println!("{} Connection failed: {}", "✗".red(), e);
                 println!();
                 println!("Make sure:");
                 println!("  • Your Bevy game is running");
-                println!("  • RemotePlugin is added to your app");
+                println!("  • RemotePlugin and RemoteHttpPlugin are added to your app");
                 println!("  • The correct port is specified");
-            }
-            Err(_) => {
-                println!("{} Connection timeout", "✗".red());
-                println!();
-                println!("Could not connect to {}:{}", host, port);
-                println!("Is your Bevy game running?");
             }
         }
         

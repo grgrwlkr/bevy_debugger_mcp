@@ -170,100 +170,115 @@ impl Config {
             .map_err(|_| Error::Config("Invalid MCP_PORT".to_string()))?;
 
         let mut resilience = ResilienceConfig::default();
-        
+
         // Parse resilience configuration from environment
         if let Ok(val) = env::var("BRP_CIRCUIT_BREAKER_THRESHOLD") {
-            resilience.circuit_breaker.failure_threshold = val.parse()
+            resilience.circuit_breaker.failure_threshold = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid BRP_CIRCUIT_BREAKER_THRESHOLD".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("BRP_CIRCUIT_BREAKER_RESET_TIMEOUT") {
-            let seconds: u64 = val.parse()
-                .map_err(|_| Error::Config("Invalid BRP_CIRCUIT_BREAKER_RESET_TIMEOUT".to_string()))?;
+            let seconds: u64 = val.parse().map_err(|_| {
+                Error::Config("Invalid BRP_CIRCUIT_BREAKER_RESET_TIMEOUT".to_string())
+            })?;
             resilience.circuit_breaker.reset_timeout = Duration::from_secs(seconds);
         }
-        
+
         if let Ok(val) = env::var("BRP_MAX_CONNECTIONS") {
-            resilience.connection_pool.max_connections = val.parse()
+            resilience.connection_pool.max_connections = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid BRP_MAX_CONNECTIONS".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("BRP_CONNECTION_TIMEOUT") {
-            let seconds: u64 = val.parse()
+            let seconds: u64 = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid BRP_CONNECTION_TIMEOUT".to_string()))?;
             resilience.connection_pool.connection_timeout = Duration::from_secs(seconds);
         }
-        
+
         if let Ok(val) = env::var("BRP_HEARTBEAT_INTERVAL") {
-            let seconds: u64 = val.parse()
+            let seconds: u64 = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid BRP_HEARTBEAT_INTERVAL".to_string()))?;
             resilience.heartbeat.interval = Duration::from_secs(seconds);
         }
-        
+
         if let Ok(val) = env::var("BRP_HEARTBEAT_TIMEOUT") {
-            let seconds: u64 = val.parse()
+            let seconds: u64 = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid BRP_HEARTBEAT_TIMEOUT".to_string()))?;
             resilience.heartbeat.timeout = Duration::from_secs(seconds);
         }
-        
+
         if let Ok(val) = env::var("BRP_RETRY_MAX_ATTEMPTS") {
-            resilience.retry.max_attempts = val.parse()
+            resilience.retry.max_attempts = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid BRP_RETRY_MAX_ATTEMPTS".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("BRP_RETRY_INITIAL_DELAY") {
-            let milliseconds: u64 = val.parse()
+            let milliseconds: u64 = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid BRP_RETRY_INITIAL_DELAY".to_string()))?;
             resilience.retry.initial_delay = Duration::from_millis(milliseconds);
         }
-        
+
         if let Ok(val) = env::var("BRP_RETRY_MAX_DELAY") {
-            let seconds: u64 = val.parse()
+            let seconds: u64 = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid BRP_RETRY_MAX_DELAY".to_string()))?;
             resilience.retry.max_delay = Duration::from_secs(seconds);
         }
 
         let mut observability = ObservabilityConfig::default();
-        
+
         // Parse observability configuration from environment
         if let Ok(val) = env::var("METRICS_ENABLED") {
-            observability.metrics_enabled = val.parse()
+            observability.metrics_enabled = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid METRICS_ENABLED".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("METRICS_PORT") {
-            observability.metrics_port = val.parse()
+            observability.metrics_port = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid METRICS_PORT".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("TRACING_ENABLED") {
-            observability.tracing_enabled = val.parse()
+            observability.tracing_enabled = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid TRACING_ENABLED".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("JAEGER_ENDPOINT") {
             observability.jaeger_endpoint = Some(val);
         }
-        
+
         if let Ok(val) = env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
             observability.otlp_endpoint = Some(val);
         }
-        
+
         if let Ok(val) = env::var("HEALTH_CHECK_ENABLED") {
-            observability.health_check_enabled = val.parse()
+            observability.health_check_enabled = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid HEALTH_CHECK_ENABLED".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("HEALTH_CHECK_PORT") {
-            observability.health_check_port = val.parse()
+            observability.health_check_port = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid HEALTH_CHECK_PORT".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("OTEL_TRACES_SAMPLER_ARG") {
-            observability.sample_rate = val.parse()
+            observability.sample_rate = val
+                .parse()
                 .map_err(|_| Error::Config("Invalid OTEL_TRACES_SAMPLER_ARG".to_string()))?;
         }
-        
+
         if let Ok(val) = env::var("DEPLOYMENT_ENVIRONMENT") {
             observability.environment = val;
         }
@@ -279,31 +294,45 @@ impl Config {
 
     #[must_use]
     pub fn brp_url(&self) -> String {
-        format!("ws://{}:{}", self.bevy_brp_host, self.bevy_brp_port)
+        if let Ok(value) = env::var("BEVY_BRP_URL") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+        format!("http://{}:{}", self.bevy_brp_host, self.bevy_brp_port)
     }
-    
+
     /// Validate configuration values
     pub fn validate(&self) -> Result<()> {
         if self.resilience.circuit_breaker.failure_threshold == 0 {
-            return Err(Error::Config("Circuit breaker failure threshold must be > 0".to_string()));
+            return Err(Error::Config(
+                "Circuit breaker failure threshold must be > 0".to_string(),
+            ));
         }
-        
+
         if self.resilience.connection_pool.max_connections == 0 {
             return Err(Error::Config("Max connections must be > 0".to_string()));
         }
-        
-        if self.resilience.connection_pool.max_connections < self.resilience.connection_pool.min_connections {
-            return Err(Error::Config("Max connections must be >= min connections".to_string()));
+
+        if self.resilience.connection_pool.max_connections
+            < self.resilience.connection_pool.min_connections
+        {
+            return Err(Error::Config(
+                "Max connections must be >= min connections".to_string(),
+            ));
         }
-        
+
         if self.resilience.retry.max_attempts == 0 {
             return Err(Error::Config("Retry max attempts must be > 0".to_string()));
         }
-        
+
         if self.resilience.heartbeat.max_missed == 0 {
-            return Err(Error::Config("Heartbeat max missed must be > 0".to_string()));
+            return Err(Error::Config(
+                "Heartbeat max missed must be > 0".to_string(),
+            ));
         }
-        
+
         Ok(())
     }
 }

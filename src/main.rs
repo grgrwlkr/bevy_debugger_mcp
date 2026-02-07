@@ -16,11 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use is_terminal::IsTerminal;
 use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
-use is_terminal::IsTerminal;
 
 // Modules are defined in lib.rs, no need to redeclare them here
 
@@ -43,49 +43,62 @@ async fn main() -> Result<()> {
         } else {
             "Unknown panic payload".to_string()
         };
-        
+
         let location = if let Some(location) = panic_info.location() {
-            format!("{}:{}:{}", location.file(), location.line(), location.column())
+            format!(
+                "{}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            )
         } else {
             "Unknown location".to_string()
         };
-        
-        eprintln!("FATAL PANIC in bevy-debugger-mcp: {} at {}", payload, location);
+
+        eprintln!(
+            "FATAL PANIC in bevy-debugger-mcp: {} at {}",
+            payload, location
+        );
         eprintln!("This indicates a critical bug that should be reported.");
         eprintln!("Stack trace should appear above this message.");
-        
+
         // Ensure logs are flushed
         std::io::Write::flush(&mut std::io::stderr()).unwrap_or(());
     }));
     let args: Vec<String> = std::env::args().collect();
-    
+
     // Check for help flag
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!("Bevy Debugger MCP Server v{}", env!("CARGO_PKG_VERSION"));
         println!("\nUsage: {} [OPTIONS]", args[0]);
         println!("\nOptions:");
         println!("  --stdio              Run in stdio mode (default for Claude Code)");
-        println!("  --tcp, --server      Run as TCP server on port {}", Config::from_env().unwrap_or_default().mcp_port);
+        println!(
+            "  --tcp, --server      Run as TCP server on port {}",
+            Config::from_env().unwrap_or_default().mcp_port
+        );
         println!("  --help, -h           Show this help message");
         println!("\nEnvironment variables:");
+        println!("  BEVY_BRP_URL         Full BRP URL (e.g. http://localhost:15702)");
         println!("  BEVY_BRP_HOST        Bevy Remote Protocol host (default: localhost)");
         println!("  BEVY_BRP_PORT        Bevy Remote Protocol port (default: 15702)");
         println!("  MCP_PORT             MCP server port for TCP mode (default: 3001)");
         println!("  RUST_LOG             Logging level (default: info)");
         return Ok(());
     }
-    
+
     // Determine if we're in stdio mode (for MCP protocol)
-    let is_stdio_mode = args.iter().any(|arg| arg == "--stdio") || 
-                        (!args.iter().any(|arg| arg == "--tcp" || arg == "--server") && !std::io::stdout().is_terminal());
-    
+    let is_stdio_mode = args.iter().any(|arg| arg == "--stdio")
+        || (!args.iter().any(|arg| arg == "--tcp" || arg == "--server")
+            && !std::io::stdout().is_terminal());
+
     // Initialize tracing to stderr when in stdio mode (stdout is reserved for MCP protocol)
     // This prevents log output from contaminating the JSON-RPC stream
     if is_stdio_mode {
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_writer(std::io::stderr)
-            .with_ansi(false)  // Disable ANSI color codes in stdio mode
+            .with_ansi(false) // Disable ANSI color codes in stdio mode
             .init();
     } else {
         tracing_subscriber::fmt()
@@ -97,13 +110,12 @@ async fn main() -> Result<()> {
 
     // Check if we should run in stdio mode (for Claude Code) or TCP mode
     let use_tcp = args.iter().any(|arg| arg == "--tcp" || arg == "--server");
-    let use_stdio = !use_tcp && (
-        args.iter().any(|arg| arg == "--stdio")
-        || !is_terminal::IsTerminal::is_terminal(&std::io::stdin())
-        || std::env::var("MCP_TRANSPORT")
-            .map(|t| t == "stdio")
-            .unwrap_or(false)
-    );
+    let use_stdio = !use_tcp
+        && (args.iter().any(|arg| arg == "--stdio")
+            || !is_terminal::IsTerminal::is_terminal(&std::io::stdin())
+            || std::env::var("MCP_TRANSPORT")
+                .map(|t| t == "stdio")
+                .unwrap_or(false));
 
     if use_stdio {
         info!("Starting Bevy Debugger MCP Server in stdio mode for Claude Code");
@@ -123,17 +135,18 @@ async fn run_stdio_mode(config: Config) -> Result<()> {
         let client = brp_client.read().await;
         client.init().await?;
     }
-    
+
     // Initialize observability if enabled
     #[cfg(feature = "observability")]
-    let _observability = if config.observability.metrics_enabled || config.observability.tracing_enabled {
-        let obs_service = ObservabilityService::new(config.clone(), brp_client.clone()).await?;
-        obs_service.start().await?;
-        Some(obs_service)
-    } else {
-        None
-    };
-    
+    let _observability =
+        if config.observability.metrics_enabled || config.observability.tracing_enabled {
+            let obs_service = ObservabilityService::new(config.clone(), brp_client.clone()).await?;
+            obs_service.start().await?;
+            Some(obs_service)
+        } else {
+            None
+        };
+
     let server = mcp_server_v2::McpServerV2::new(config, brp_client)?;
     server.run_stdio().await
 }
@@ -144,43 +157,54 @@ async fn run_tcp_mode(config: Config) -> Result<()> {
         let client = brp_client.read().await;
         client.init().await?;
     }
-    
+
     // Initialize observability if enabled
     #[cfg(feature = "observability")]
-    let observability = if config.observability.metrics_enabled || config.observability.tracing_enabled {
-        let obs_service = ObservabilityService::new(config.clone(), brp_client.clone()).await?;
-        obs_service.start().await?;
-        
-        // Start health endpoints if enabled
-        if config.observability.health_check_enabled {
-            let health_service = obs_service.health();
-            let health_router = health_service.create_router();
-            
-            tokio::spawn(async move {
-                let app = health_router.with_state(health_service);
-                let health_listener = tokio::net::TcpListener::bind(
-                    format!("127.0.0.1:{}", config.observability.health_check_port)
-                ).await.expect("Failed to bind health check port");
-                
-                info!("Health endpoints available at http://127.0.0.1:{}", config.observability.health_check_port);
-                axum::serve(health_listener, app).await.expect("Health server failed");
-            });
-        }
-        
-        Some(obs_service)
-    } else {
-        None
-    };
-    
+    let observability =
+        if config.observability.metrics_enabled || config.observability.tracing_enabled {
+            let obs_service = ObservabilityService::new(config.clone(), brp_client.clone()).await?;
+            obs_service.start().await?;
+
+            // Start health endpoints if enabled
+            if config.observability.health_check_enabled {
+                let health_service = obs_service.health();
+                let health_router = health_service.create_router();
+
+                tokio::spawn(async move {
+                    let app = health_router.with_state(health_service);
+                    let health_listener = tokio::net::TcpListener::bind(format!(
+                        "127.0.0.1:{}",
+                        config.observability.health_check_port
+                    ))
+                    .await
+                    .expect("Failed to bind health check port");
+
+                    info!(
+                        "Health endpoints available at http://127.0.0.1:{}",
+                        config.observability.health_check_port
+                    );
+                    axum::serve(health_listener, app)
+                        .await
+                        .expect("Health server failed");
+                });
+            }
+
+            Some(obs_service)
+        } else {
+            None
+        };
+
     let mcp_server = mcp_server::McpServer::new(config.clone(), brp_client);
-    
+
     // Start TCP server
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", config.mcp_port))
         .await
-        .map_err(|e| bevy_debugger_mcp::error::Error::Connection(format!("Failed to bind TCP: {}", e)))?;
-    
+        .map_err(|e| {
+            bevy_debugger_mcp::error::Error::Connection(format!("Failed to bind TCP: {}", e))
+        })?;
+
     info!("MCP server listening on 127.0.0.1:{}", config.mcp_port);
-    
+
     let server_handle = tokio::spawn(async move {
         if let Err(e) = mcp_server.run(listener).await {
             error!("MCP Server error: {}", e);
@@ -193,7 +217,7 @@ async fn run_tcp_mode(config: Config) -> Result<()> {
         }
         _ = signal::ctrl_c() => {
             info!("Received SIGINT, shutting down gracefully");
-            
+
             #[cfg(feature = "observability")]
             if let Some(obs) = observability {
                 if let Err(e) = obs.shutdown().await {
