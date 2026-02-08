@@ -259,7 +259,14 @@ impl SecurityManager {
         self.config.validate_password(password)?;
 
         let salt = SaltString::generate(&mut OsRng);
-        let argon2 = Argon2::default();
+        let argon2 = if cfg!(debug_assertions) {
+            let params = argon2::Params::new(1024, 1, 1, None).map_err(|e| {
+                Error::SecurityError(format!("Failed to create test hash params: {e}"))
+            })?;
+            Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
+        } else {
+            Argon2::default()
+        };
 
         let password_hash = argon2
             .hash_password(password.as_bytes(), &salt)
@@ -678,6 +685,36 @@ impl SecurityManager {
         users.insert(username.to_string(), user);
         info!("User {} created", username);
 
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    pub async fn seed_user_for_tests(
+        &self,
+        username: &str,
+        password: &str,
+        role: Role,
+    ) -> Result<()> {
+        let params = argon2::Params::new(1024, 1, 1, None)
+            .map_err(|e| Error::SecurityError(format!("Failed to create test hash params: {e}")))?;
+        let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+        let salt = SaltString::generate(&mut OsRng);
+        let password_hash = argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| Error::SecurityError(format!("Failed to hash test password: {e}")))?
+            .to_string();
+        let user = User {
+            id: username.to_string(),
+            username: username.to_string(),
+            password_hash,
+            role,
+            created_at: Utc::now(),
+            last_login: None,
+            active: true,
+        };
+
+        let mut users = self.users.write().await;
+        users.insert(username.to_string(), user);
         Ok(())
     }
 

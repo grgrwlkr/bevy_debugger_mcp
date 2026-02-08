@@ -120,20 +120,11 @@ enum SuggestionCondition {
 
 impl SuggestionEngine {
     pub fn new(pattern_system: Arc<PatternLearningSystem>) -> Self {
-        let engine = Self {
+        Self {
             pattern_system,
             suggestion_history: Arc::new(RwLock::new(HashMap::new())),
-            templates: Arc::new(RwLock::new(Vec::new())),
-        };
-
-        // Initialize with default templates
-        let templates_clone = engine.templates.clone();
-        tokio::spawn(async move {
-            let mut templates = templates_clone.write().await;
-            templates.extend(Self::create_default_templates());
-        });
-
-        engine
+            templates: Arc::new(RwLock::new(Self::create_default_templates())),
+        }
     }
 
     /// Generate suggestions based on context

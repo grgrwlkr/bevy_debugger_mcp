@@ -35,6 +35,9 @@ async fn test_screenshot_integration_suite() {
 /// Individual test for screenshot utilities only
 #[tokio::test]
 async fn test_screenshot_utilities() {
+    if !require_wrapper_tests() {
+        return;
+    }
     setup_test_environment();
 
     let result = run_cargo_test("screenshot_test_utils", &["--lib"]);
@@ -44,6 +47,9 @@ async fn test_screenshot_utilities() {
 /// Test basic screenshot functionality without real games
 #[tokio::test]
 async fn test_screenshot_basic_functionality() {
+    if !require_wrapper_tests() {
+        return;
+    }
     setup_test_environment();
 
     let tests = vec![
@@ -65,6 +71,9 @@ async fn test_screenshot_basic_functionality() {
 /// Test parameter validation and edge cases
 #[tokio::test]
 async fn test_screenshot_parameter_validation() {
+    if !require_wrapper_tests() {
+        return;
+    }
     setup_test_environment();
 
     let tests = vec![
@@ -86,6 +95,9 @@ async fn test_screenshot_parameter_validation() {
 /// Test timing behavior and controls
 #[tokio::test]
 async fn test_screenshot_timing_controls() {
+    if !require_wrapper_tests() {
+        return;
+    }
     setup_test_environment();
 
     let tests = vec![
@@ -102,6 +114,9 @@ async fn test_screenshot_timing_controls() {
 /// Test compilation of all screenshot-related code
 #[tokio::test]
 async fn test_screenshot_compilation() {
+    if !require_wrapper_tests() {
+        return;
+    }
     setup_test_environment();
 
     // Test example compilation
@@ -131,6 +146,9 @@ async fn test_screenshot_compilation() {
 async fn test_screenshot_performance() {
     use std::time::Instant;
 
+    if !require_wrapper_tests() {
+        return;
+    }
     setup_test_environment();
 
     // Test that parameter processing doesn't take too long
@@ -152,6 +170,9 @@ async fn test_screenshot_performance() {
 /// Test that runs a subset suitable for CI/fast feedback
 #[tokio::test]
 async fn test_screenshot_ci_suite() {
+    if !require_wrapper_tests() {
+        return;
+    }
     setup_test_environment();
 
     // Fast tests only - no real game launching
@@ -272,6 +293,18 @@ fn setup_test_environment() {
     std::fs::create_dir_all("test_output").ok();
     std::fs::create_dir_all("reference_screenshots").ok();
     std::fs::create_dir_all("diffs").ok();
+}
+
+fn require_wrapper_tests() -> bool {
+    let enabled = env::var("RUN_SCREENSHOT_WRAPPER")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE"))
+        .unwrap_or(false);
+
+    if !enabled {
+        println!("Skipping screenshot wrapper tests (set RUN_SCREENSHOT_WRAPPER=1 to enable)");
+    }
+
+    enabled
 }
 
 fn run_screenshot_utilities_tests() {

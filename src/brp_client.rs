@@ -190,6 +190,10 @@ impl BrpClient {
         const MAX_RETRIES: u32 = 5;
         const BASE_DELAY: Duration = Duration::from_millis(1000);
 
+        // Treat each call as a fresh retry cycle so we can reconnect
+        // after a previous failure once the game becomes available.
+        self.retry_count = 0;
+
         while self.retry_count < MAX_RETRIES {
             match self.connect().await {
                 Ok(()) => {

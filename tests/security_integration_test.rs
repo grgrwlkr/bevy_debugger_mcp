@@ -34,11 +34,33 @@ async fn create_test_security_manager() -> Arc<SecurityManager> {
         jwt_secret: "test_secret_for_testing_only".to_string(),
         jwt_expiry_hours: 1,
         password_min_length: 4,
+        password_require_complexity: false,
+        password_blacklist_check: false,
         rate_limit_per_ip: 1000, // High limit for tests
+        production_mode: true,
         ..SecurityConfig::default()
     };
 
-    Arc::new(SecurityManager::new(config).expect("Failed to create security manager"))
+    let manager =
+        Arc::new(SecurityManager::new(config).expect("Failed to create security manager"));
+
+    #[cfg(debug_assertions)]
+    {
+        manager
+            .seed_user_for_tests("admin", "admin123", Role::Admin)
+            .await
+            .expect("Failed to seed admin user");
+        manager
+            .seed_user_for_tests("developer", "dev123", Role::Developer)
+            .await
+            .expect("Failed to seed developer user");
+        manager
+            .seed_user_for_tests("viewer", "viewer123", Role::Viewer)
+            .await
+            .expect("Failed to seed viewer user");
+    }
+
+    manager
 }
 
 /// Create a test BRP client (mock)
@@ -394,11 +416,23 @@ async fn test_session_cleanup() {
     let config = SecurityConfig {
         session_timeout_hours: 0, // Immediate expiry for testing
         jwt_secret: "test_secret".to_string(),
+        password_min_length: 4,
+        password_require_complexity: false,
+        password_blacklist_check: false,
+        production_mode: true,
         ..SecurityConfig::default()
     };
 
     let security_manager =
         Arc::new(SecurityManager::new(config).expect("Failed to create security manager"));
+
+    #[cfg(debug_assertions)]
+    {
+        security_manager
+            .seed_user_for_tests("admin", "admin123", Role::Admin)
+            .await
+            .expect("Failed to seed admin user");
+    }
 
     let token = security_manager
         .authenticate("admin", "admin123", None, None)

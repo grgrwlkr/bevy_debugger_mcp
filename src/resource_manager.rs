@@ -134,16 +134,20 @@ where
     }
 
     pub async fn acquire(&self) -> T {
+        self.acquire_with_source().await.0
+    }
+
+    pub async fn acquire_with_source(&self) -> (T, bool) {
         {
             let mut objects = self.objects.write().await;
             if let Some(obj) = objects.pop() {
                 self.current_size.fetch_sub(1, Ordering::Relaxed);
-                return obj;
+                return (obj, true);
             }
         }
 
         // Create new object if pool is empty
-        (self.factory)()
+        ((self.factory)(), false)
     }
 
     pub async fn release(&self, obj: T) {

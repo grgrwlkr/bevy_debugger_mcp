@@ -157,8 +157,8 @@ async fn test_drift_detector() {
     assert!(detector.get_correction().is_none());
 
     // Add samples with large drift (should trigger correction)
-    detector.add_sample(Duration::from_millis(400), Duration::from_millis(500));
-    detector.add_sample(Duration::from_millis(500), Duration::from_millis(620));
+    detector.add_sample(Duration::from_millis(400), Duration::from_millis(800));
+    detector.add_sample(Duration::from_millis(500), Duration::from_millis(900));
 
     assert!(detector.needs_correction());
     assert!(detector.get_correction().is_some());

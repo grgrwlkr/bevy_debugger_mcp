@@ -606,7 +606,7 @@ async fn test_complex_query_performance() {
         .without_components(vec!["Camera", "DirectionalLight"]);
 
     // Add multiple component filters
-    for i in 0..3 {
+    for i in 0..6 {
         let filter = ComponentFilter {
             component: "Transform".to_string(),
             field: Some(format!("field_{}", i)),

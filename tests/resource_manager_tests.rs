@@ -2,7 +2,7 @@ use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 use bevy_debugger_mcp::brp_client::BrpClient;
 use bevy_debugger_mcp::config::Config;
@@ -48,7 +48,17 @@ async fn test_operation_permit_acquisition() {
     let permit2 = manager.acquire_operation_permit().await;
     assert!(permit2.is_ok());
 
-    // Should still work with default semaphore behavior
+    let blocked = timeout(
+        Duration::from_millis(50),
+        manager.acquire_operation_permit(),
+    )
+    .await;
+    assert!(
+        blocked.is_err(),
+        "Permit acquisition should block when at limit"
+    );
+
+    drop(permit1);
     let permit3 = manager.acquire_operation_permit().await;
     assert!(permit3.is_ok());
 }

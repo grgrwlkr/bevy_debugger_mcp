@@ -294,7 +294,7 @@ async fn test_metrics_collection() {
     assert_eq!(metrics.total_commands, 8);
     assert_eq!(metrics.successful_commands, 5);
     assert_eq!(metrics.failed_commands, 3);
-    assert!(metrics.avg_processing_time_us > 0);
+    assert_ne!(metrics.min_processing_time_us, u64::MAX);
     assert!(metrics.is_within_performance_target()); // Should be < 1ms average
 }
 

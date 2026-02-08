@@ -543,8 +543,17 @@ impl DebugCommandProcessor for MemoryProfilerProcessor {
 
                 Ok(())
             }
-            DebugCommand::StopMemoryProfiling { .. }
-            | DebugCommand::GetMemoryProfile
+            DebugCommand::StopMemoryProfiling { session_id } => {
+                if let Some(session_id) = session_id {
+                    if session_id.len() > 128 {
+                        return Err(Error::Validation(
+                            "Session ID too long (max 128 characters)".to_string(),
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            DebugCommand::GetMemoryProfile
             | DebugCommand::DetectMemoryLeaks { .. }
             | DebugCommand::AnalyzeMemoryTrends { .. }
             | DebugCommand::TakeMemorySnapshot

@@ -29,6 +29,9 @@ temp/
 *.tmp
 *.temp
 
+# Debug session checkpoints
+debug_sessions/checkpoints/*.json
+
 # Configuration files (keep examples)
 config.toml
 .env

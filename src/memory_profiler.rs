@@ -33,7 +33,7 @@ const MAX_ALLOCATION_BACKTRACES: usize = 10_000;
 const MAX_MEMORY_SNAPSHOTS: usize = 1000;
 
 /// Leak detection threshold - allocations older than this are considered potential leaks
-const LEAK_DETECTION_THRESHOLD: Duration = Duration::from_secs(300); // 5 minutes
+const DEFAULT_LEAK_DETECTION_THRESHOLD: Duration = Duration::from_secs(300); // 5 minutes
 
 /// Memory profiler configuration
 #[derive(Debug, Clone)]
@@ -44,6 +44,8 @@ pub struct MemoryProfilerConfig {
     pub capture_backtraces: bool,
     /// Enable leak detection
     pub enable_leak_detection: bool,
+    /// Leak detection threshold (allocations older than this are candidates)
+    pub leak_detection_threshold: Duration,
     /// Memory snapshot interval
     pub snapshot_interval: Duration,
     /// Entity count monitoring
@@ -58,6 +60,7 @@ impl Default for MemoryProfilerConfig {
             max_overhead_percent: 5.0,
             capture_backtraces: true,
             enable_leak_detection: true,
+            leak_detection_threshold: DEFAULT_LEAK_DETECTION_THRESHOLD,
             snapshot_interval: Duration::from_secs(30),
             monitor_entity_count: true,
             track_resource_footprint: true,
@@ -344,7 +347,7 @@ impl MemoryProfiler {
                         .to_std()
                         .unwrap_or(Duration::ZERO);
 
-                    if age > LEAK_DETECTION_THRESHOLD {
+                    if age > self.config.leak_detection_threshold {
                         Some(record.clone())
                     } else {
                         None
@@ -457,7 +460,16 @@ impl MemoryProfiler {
     ) -> MemoryTrend {
         // Simple linear regression for growth rate
         let n = history.len() as f64;
-        let time_values: Vec<f64> = history.iter().enumerate().map(|(i, _)| i as f64).collect();
+        let base_time = history.first().map(|(t, _)| *t).unwrap_or_else(Utc::now);
+        let time_values: Vec<f64> = history
+            .iter()
+            .map(|(timestamp, _)| {
+                timestamp
+                    .signed_duration_since(base_time)
+                    .num_milliseconds() as f64
+                    / 60000.0
+            })
+            .collect();
         let memory_values: Vec<f64> = history.iter().map(|(_, mem)| *mem as f64).collect();
 
         let sum_x: f64 = time_values.iter().sum();
@@ -469,22 +481,15 @@ impl MemoryProfiler {
             .sum();
         let sum_x2: f64 = time_values.iter().map(|x| x * x).sum();
 
-        let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
-
-        // Convert slope to bytes per minute
-        let time_span_minutes = if history.len() > 1 {
-            match (history.last(), history.first()) {
-                (Some(last), Some(first)) => {
-                    let duration = last.0.signed_duration_since(first.0);
-                    duration.num_minutes() as f64 / (history.len() - 1) as f64
-                }
-                _ => 1.0, // Fallback if history is corrupted
-            }
+        let denom = n * sum_x2 - sum_x * sum_x;
+        let slope = if denom.abs() < f64::EPSILON {
+            0.0
         } else {
-            1.0
+            (n * sum_xy - sum_x * sum_y) / denom
         };
 
-        let growth_rate_bytes_per_min = slope / time_span_minutes;
+        // Slope is already in bytes per minute based on time_values
+        let growth_rate_bytes_per_min = slope;
 
         // Predict usage in 1 hour
         let current_usage = memory_values.last().unwrap_or(&0.0);

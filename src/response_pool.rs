@@ -220,12 +220,8 @@ impl ResponsePool {
             (self.large_pool.clone(), BufferType::Large)
         };
 
-        let buffer = pool.acquire().await;
-
-        // Track pool hit/miss more accurately
-        // A buffer from the pool should have a reasonable capacity and some age
-        if buffer.data.capacity() >= estimated_size && buffer.created_at.elapsed().as_millis() > 10
-        {
+        let (buffer, from_pool) = pool.acquire_with_source().await;
+        if from_pool {
             self.pool_hits.fetch_add(1, Ordering::Relaxed);
         } else {
             self.pool_misses.fetch_add(1, Ordering::Relaxed);
@@ -235,6 +231,7 @@ impl ResponsePool {
             buffer,
             pool,
             buffer_type,
+            released: false,
             pool_ref: Arc::downgrade(&self.stats),
         }
     }
@@ -265,7 +262,9 @@ impl ResponsePool {
             actual_size, estimated_size
         );
 
-        Ok(serialized.to_vec())
+        let bytes = serialized.to_vec();
+        pooled_buffer.release().await;
+        Ok(bytes)
     }
 
     /// Estimate JSON serialization size
@@ -295,6 +294,9 @@ impl ResponsePool {
         let mut stats = self.stats.write().await;
 
         // Update real-time counts
+        stats.small_buffers_allocated = self.small_allocations.load(Ordering::Relaxed);
+        stats.medium_buffers_allocated = self.medium_allocations.load(Ordering::Relaxed);
+        stats.large_buffers_allocated = self.large_allocations.load(Ordering::Relaxed);
         stats.small_buffers_pooled = self.small_pool.size();
         stats.medium_buffers_pooled = self.medium_pool.size();
         stats.large_buffers_pooled = self.large_pool.size();
@@ -351,31 +353,42 @@ pub struct PooledResponseBuffer {
     pub buffer: ResponseBuffer,
     pool: Arc<ObjectPool<ResponseBuffer>>,
     buffer_type: BufferType,
+    released: bool,
     #[allow(dead_code)]
     pool_ref: std::sync::Weak<RwLock<ResponsePoolStats>>,
 }
 
+impl PooledResponseBuffer {
+    pub async fn release(mut self) {
+        if self.released || self.buffer.capacity == 0 {
+            return;
+        }
+
+        self.released = true;
+        let buffer = std::mem::replace(&mut self.buffer, ResponseBuffer::new(0));
+        self.pool.release(buffer).await;
+    }
+}
+
 impl Drop for PooledResponseBuffer {
     fn drop(&mut self) {
+        if self.released || self.buffer.capacity == 0 {
+            return;
+        }
+
         let pool = self.pool.clone();
         let mut buffer = std::mem::replace(&mut self.buffer, ResponseBuffer::new(0));
 
         // Clear buffer before returning to pool - ensure sensitive data is zeroed
         buffer.clear();
 
-        // Note: Async operations in Drop are problematic.
-        // This should be redesigned to use a background cleanup task
-        // or synchronous pool operations for simple objects like buffers.
-        // For now, we'll attempt synchronous return if possible.
-        std::thread::spawn(move || {
-            // Use runtime handle if available, otherwise buffer is dropped
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(async move {
-                    pool.release(buffer).await;
-                });
-            }
-            // If no runtime available, buffer is simply dropped
-        });
+        // Use runtime handle if available, otherwise buffer is dropped
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                pool.release(buffer).await;
+            });
+        }
+        // If no runtime available, buffer is simply dropped
     }
 }
 

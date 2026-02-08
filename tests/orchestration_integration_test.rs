@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 
 use bevy_debugger_mcp::brp_client::BrpClient;
@@ -35,15 +35,28 @@ async fn test_mcp_server_orchestration_integration() {
         }
     });
 
-    // This would normally fail because we don't have a real Bevy server,
-    // but we're testing that the orchestration structure is working
+    // This should return orchestration output even if the tool fails
     let result = server
         .handle_tool_call("orchestrate", orchestration_args)
-        .await;
+        .await
+        .expect("orchestration should return tool_result structure");
 
-    // We expect this to fail because there's no real BRP connection,
-    // but it should fail in the tool execution, not in the orchestration setup
-    assert!(result.is_err());
+    assert!(result.get("tool_result").is_some(), "missing tool_result");
+
+    let context = result
+        .get("context")
+        .and_then(|value| value.as_object())
+        .expect("missing context");
+    let execution_count = context
+        .get("execution_count")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_default();
+    let result_count = context
+        .get("result_count")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_default();
+    assert_eq!(execution_count, 1);
+    assert_eq!(result_count, 1);
 }
 
 #[tokio::test]
@@ -57,10 +70,27 @@ async fn test_mcp_server_pipeline_integration() {
         "template": "observe_experiment_replay"
     });
 
-    let result = server.handle_tool_call("pipeline", pipeline_args).await;
+    let result = server
+        .handle_tool_call("pipeline", pipeline_args)
+        .await
+        .expect("pipeline execution should return a result structure");
 
-    // Should fail due to no BRP connection, but structure should be correct
-    assert!(result.is_err());
+    let pipeline_result = result
+        .get("pipeline_result")
+        .and_then(|value| value.as_object())
+        .expect("missing pipeline_result");
+    let success = pipeline_result
+        .get("success")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    if !success {
+        let step_results = pipeline_result
+            .get("step_results")
+            .and_then(|value| value.as_array())
+            .expect("missing step_results");
+        assert!(!step_results.is_empty(), "expected step results on failure");
+    }
 }
 
 #[tokio::test]
@@ -70,35 +100,35 @@ async fn test_mcp_server_custom_pipeline_validation() {
     let server = McpServer::new(config, brp_client);
 
     // Test custom pipeline with too many steps (should be rejected)
-    let steps: Vec<_> = (0..51)
-        .map(|i| {
-            json!({
-                "name": format!("step_{}", i),
-                "tool": "observe",
-                "arguments": {},
-                "condition": null,
-                "retry_config": null,
-                "timeout": null
-            })
+    let steps: Vec<PipelineStep> = (0..51)
+        .map(|i| PipelineStep {
+            name: format!("step_{i}"),
+            tool: "observe".to_string(),
+            arguments: json!({}),
+            condition: None,
+            retry_config: None,
+            timeout: None,
         })
         .collect();
 
+    let pipeline = ToolPipeline {
+        name: "too_many_steps".to_string(),
+        description: Some("Test pipeline with too many steps".to_string()),
+        steps,
+        parallel_execution: false,
+        fail_fast: true,
+        created_at: SystemTime::now(),
+    };
+
     let pipeline_args = json!({
-        "pipeline": {
-            "name": "too_many_steps",
-            "description": "Test pipeline with too many steps",
-            "steps": steps,
-            "parallel_execution": false,
-            "fail_fast": true,
-            "created_at": "2024-01-01T00:00:00Z"
-        }
+        "pipeline": serde_json::to_value(&pipeline).expect("pipeline should serialize")
     });
 
     let result = server.handle_tool_call("pipeline", pipeline_args).await;
 
     // Should be rejected due to too many steps
     assert!(result.is_err());
-    let error_msg = format!("{:?}", result.unwrap_err());
+    let error_msg = result.unwrap_err().to_string();
     assert!(error_msg.contains("too complex") || error_msg.contains("50 steps"));
 }
 
@@ -109,29 +139,33 @@ async fn test_mcp_server_invalid_tool_validation() {
     let server = McpServer::new(config, brp_client);
 
     // Test custom pipeline with invalid tool
+    let steps = vec![PipelineStep {
+        name: "bad_step".to_string(),
+        tool: "nonexistent_tool".to_string(),
+        arguments: json!({}),
+        condition: None,
+        retry_config: None,
+        timeout: None,
+    }];
+
+    let pipeline = ToolPipeline {
+        name: "invalid_tool_test".to_string(),
+        description: Some("Test pipeline with invalid tool".to_string()),
+        steps,
+        parallel_execution: false,
+        fail_fast: true,
+        created_at: SystemTime::now(),
+    };
+
     let pipeline_args = json!({
-        "pipeline": {
-            "name": "invalid_tool_test",
-            "description": "Test pipeline with invalid tool",
-            "steps": [{
-                "name": "bad_step",
-                "tool": "nonexistent_tool",
-                "arguments": {},
-                "condition": null,
-                "retry_config": null,
-                "timeout": null
-            }],
-            "parallel_execution": false,
-            "fail_fast": true,
-            "created_at": "2024-01-01T00:00:00Z"
-        }
+        "pipeline": serde_json::to_value(&pipeline).expect("pipeline should serialize")
     });
 
     let result = server.handle_tool_call("pipeline", pipeline_args).await;
 
     // Should be rejected due to unknown tool
     assert!(result.is_err());
-    let error_msg = format!("{:?}", result.unwrap_err());
+    let error_msg = result.unwrap_err().to_string();
     assert!(error_msg.contains("Unknown tool") || error_msg.contains("nonexistent_tool"));
 }
 

@@ -195,24 +195,29 @@ impl HotReloadSystem {
         let debounce_delay = Duration::from_millis(self.config.debounce_delay_ms);
         let last_reload = self.last_reload.clone();
 
+        let runtime = tokio::runtime::Handle::try_current().ok();
         let watcher = notify::recommended_watcher(move |res: notify::Result<Event>| match res {
             Ok(event) => {
                 let tx_clone = tx.clone();
                 let last_reload_clone = last_reload.clone();
                 let debounce_delay_clone = debounce_delay;
 
-                tokio::spawn(async move {
-                    if let Err(e) = Self::handle_file_event(
-                        event,
-                        tx_clone,
-                        last_reload_clone,
-                        debounce_delay_clone,
-                    )
-                    .await
-                    {
-                        error!("Error handling file event: {}", e);
-                    }
-                });
+                if let Some(runtime) = runtime.clone() {
+                    runtime.spawn(async move {
+                        if let Err(e) = Self::handle_file_event(
+                            event,
+                            tx_clone,
+                            last_reload_clone,
+                            debounce_delay_clone,
+                        )
+                        .await
+                        {
+                            error!("Error handling file event: {}", e);
+                        }
+                    });
+                } else {
+                    error!("Hot reload event dropped: no Tokio runtime available");
+                }
             }
             Err(e) => error!("File watcher error: {}", e),
         })

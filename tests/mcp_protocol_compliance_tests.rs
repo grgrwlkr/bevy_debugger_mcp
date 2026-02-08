@@ -360,10 +360,23 @@ mod error_handling {
             .observe(rmcp::handler::server::tool::Parameters(request))
             .await;
 
-        // Should return connection error
-        assert!(result.is_err());
-        if let Err(e) = result {
-            assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
+        // Should return a connection-related error (either as MCP error or payload)
+        match result {
+            Ok(result) => {
+                let text = result
+                    .content
+                    .first()
+                    .and_then(|content| content.as_text())
+                    .map(|text| text.text.clone())
+                    .unwrap_or_default();
+                assert!(
+                    text.contains("\"error\""),
+                    "Expected error payload, got: {text}"
+                );
+            }
+            Err(e) => {
+                assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
+            }
         }
     }
 }

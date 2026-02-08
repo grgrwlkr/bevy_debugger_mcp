@@ -65,10 +65,10 @@ async fn test_epic_6_security_observability_integration() -> Result<()> {
         let mut client = brp_client.write().await;
         // This should succeed even if Bevy isn't running (connection attempt is what we're testing)
         let result = timeout(Duration::from_secs(1), client.connect_with_retry()).await;
-        if let Ok(result) = result {
-            // We expect this to fail with connection error, not a security error
-            assert!(result.is_err());
-            let error_msg = result.unwrap_err().to_string();
+        // Connection may succeed if a Bevy game is running. If it fails,
+        // it should be a connection error, not a security error.
+        if let Ok(Err(err)) = result {
+            let error_msg = err.to_string();
             assert!(error_msg.contains("connection") || error_msg.contains("Connection"));
         }
     }

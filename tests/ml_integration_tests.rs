@@ -99,7 +99,7 @@ async fn test_pattern_learning_to_suggestions_pipeline() -> Result<()> {
         recent_commands: commands[..2].to_vec(), // Partial pattern
         system_state: SystemState {
             entity_count: 1000,
-            fps: 45.0, // Low FPS should trigger suggestions
+            fps: 25.0, // Low FPS should trigger suggestions
             memory_mb: 256.0,
             active_systems: 25,
             has_errors: false,
