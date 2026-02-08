@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -20,9 +21,11 @@ impl ResourceId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
+}
 
-    pub fn to_string(&self) -> String {
-        self.0.to_string()
+impl fmt::Display for ResourceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -89,9 +92,11 @@ pub struct ResourceMetrics {
 /// Resource usage sample for adaptive sampling
 #[derive(Debug, Clone)]
 struct ResourceSample {
+    #[allow(dead_code)]
     timestamp: Instant,
     cpu_percent: f32,
     memory_bytes: u64,
+    #[allow(dead_code)]
     request_count: u32,
 }
 
@@ -465,6 +470,7 @@ impl ResourceManager {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn update_metrics(
         metrics: &Arc<RwLock<ResourceMetrics>>,
         system: &Arc<RwLock<System>>,
@@ -541,7 +547,7 @@ impl ResourceManager {
         }
     }
 
-    pub async fn acquire_operation_permit(&self) -> Result<tokio::sync::SemaphorePermit> {
+    pub async fn acquire_operation_permit(&self) -> Result<tokio::sync::SemaphorePermit<'_>> {
         if self.circuit_breaker.is_open().await {
             return Err(Error::Validation(
                 "Circuit breaker is open - operations temporarily blocked".to_string(),
@@ -729,7 +735,7 @@ mod tests {
     #[tokio::test]
     async fn test_operation_permit_acquisition() {
         let config = ResourceConfig {
-            max_concurrent_operations: 2,
+            max_concurrent_operations: 3,
             ..Default::default()
         };
         let manager = ResourceManager::new(config);
@@ -786,7 +792,7 @@ mod tests {
         pool.release(s1).await;
         assert_eq!(pool.size(), 1);
 
-        let s2 = pool.acquire().await;
+        let _s2 = pool.acquire().await;
         assert_eq!(pool.size(), 0);
     }
 

@@ -359,7 +359,7 @@ impl MemoryProfiler {
         for record in &leak_candidates {
             system_leaks
                 .entry(record.system_name.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(record);
         }
 
@@ -425,7 +425,7 @@ impl MemoryProfiler {
             for (system_name, memory_usage) in &snapshot.system_allocations {
                 system_histories
                     .entry(system_name.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push((snapshot.timestamp, *memory_usage));
             }
         }
@@ -504,7 +504,7 @@ impl MemoryProfiler {
             .sum();
 
         let prediction_confidence = if ss_tot > 0.0 {
-            (1.0 - ss_res / ss_tot).max(0.0).min(1.0)
+            (1.0 - ss_res / ss_tot).clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -700,8 +700,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_leak_detection() {
-        let mut config = MemoryProfilerConfig::default();
-        config.enable_leak_detection = true;
+        let config = MemoryProfilerConfig {
+            enable_leak_detection: true,
+            ..Default::default()
+        };
         let profiler = MemoryProfiler::new(config);
 
         // Create many old allocations to simulate leaks

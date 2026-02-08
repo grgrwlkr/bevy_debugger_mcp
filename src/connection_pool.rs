@@ -18,15 +18,15 @@
 
 use crate::config::{Config, ConnectionPoolConfig};
 use crate::error::{Error, Result};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex, Semaphore};
+use tokio::sync::{Mutex, Semaphore};
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use url::Url;
 use uuid::Uuid;
 
@@ -311,7 +311,7 @@ impl ConnectionPool {
     /// Create a new connection to the BRP endpoint
     async fn create_connection(&self) -> Result<PooledConnection> {
         let url_str = self.config.brp_url();
-        let url = Url::parse(&url_str)
+        let _url = Url::parse(&url_str)
             .map_err(|e| Error::Connection(format!("Invalid BRP URL: {}", e)))?;
 
         debug!("Creating new connection to {}", url_str);
@@ -465,15 +465,20 @@ mod tests {
 
     #[test]
     fn test_metrics_utilization_rate() {
-        let mut metrics = ConnectionPoolMetrics::default();
-        metrics.active_connections = 3;
-        metrics.available_connections = 7;
+        let metrics = ConnectionPoolMetrics {
+            active_connections: 3,
+            available_connections: 7,
+            ..Default::default()
+        };
 
         assert_eq!(metrics.connection_utilization_rate(), 0.3);
 
         // Edge case: no connections
-        metrics.active_connections = 0;
-        metrics.available_connections = 0;
+        let metrics = ConnectionPoolMetrics {
+            active_connections: 0,
+            available_connections: 0,
+            ..Default::default()
+        };
         assert_eq!(metrics.connection_utilization_rate(), 0.0);
     }
 }

@@ -17,16 +17,15 @@
  */
 
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::brp_messages::{BrpRequest, QueryFilter};
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 /// Performance metrics for query execution
 #[derive(Debug, Clone, Serialize)]
@@ -304,7 +303,7 @@ impl QueryStateCache {
     async fn analyze_query_request(
         &self,
         filter: Option<&QueryFilter>,
-        limit: Option<usize>,
+        _limit: Option<usize>,
     ) -> Result<(ComponentAccessStrategy, PerformanceImpact)> {
         let Some(filter) = filter else {
             // No filter - list all entities (expensive)
@@ -679,7 +678,7 @@ impl OptimizedQuery {
             .estimated_entity_count;
         let cpu_count = num_cpus::get();
 
-        Some((entity_count / (cpu_count * 2)).max(100).min(1000))
+        Some((entity_count / (cpu_count * 2)).clamp(100, 1000))
     }
 }
 
@@ -702,7 +701,7 @@ mod tests {
         assert!(cache.stats().cache_misses == 1);
 
         // Second access should hit cache
-        let state2 = cache.get_or_build_query_state(&request).await.unwrap();
+        let _state2 = cache.get_or_build_query_state(&request).await.unwrap();
         assert!(cache.stats().cache_hits == 1);
     }
 

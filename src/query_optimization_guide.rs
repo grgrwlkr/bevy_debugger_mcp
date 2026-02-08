@@ -75,8 +75,7 @@
 //! }
 //! ```
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde::Serialize;
 
 /// Best practices for Bevy ECS query optimization
 #[derive(Debug, Clone, Serialize)]

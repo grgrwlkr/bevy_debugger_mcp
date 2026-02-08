@@ -17,7 +17,7 @@ use tokio::time::timeout;
 /// Test helper to start the MCP server in stdio mode
 async fn start_mcp_server() -> Result<Child, Box<dyn std::error::Error>> {
     let mut cmd = TokioCommand::new("cargo");
-    cmd.args(&["run", "--", "--stdio"])
+    cmd.args(["run", "--", "--stdio"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -38,7 +38,7 @@ async fn start_mcp_server() -> Result<Child, Box<dyn std::error::Error>> {
 async fn test_mcp_stdio_handshake() -> Result<(), Box<dyn std::error::Error>> {
     // Skip if we don't have a working binary
     if Command::new("cargo")
-        .args(&["check", "--bin", "bevy-debugger-mcp"])
+        .args(["check", "--bin", "bevy-debugger-mcp"])
         .output()
         .is_err()
     {
@@ -177,7 +177,7 @@ async fn test_graceful_shutdown() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     {
         if Command::new("cargo")
-            .args(&["check", "--bin", "bevy-debugger-mcp"])
+            .args(["check", "--bin", "bevy-debugger-mcp"])
             .output()
             .is_err()
         {
@@ -192,9 +192,8 @@ async fn test_graceful_shutdown() -> Result<(), Box<dyn std::error::Error>> {
 
         // Send SIGTERM
         if let Some(id) = server.id() {
-            let _ = Command::new("kill")
-                .args(&["-TERM", &id.to_string()])
-                .output();
+            let id = id.to_string();
+            let _ = Command::new("kill").args(["-TERM", id.as_str()]).output();
         }
 
         // Wait for graceful shutdown

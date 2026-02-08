@@ -15,7 +15,7 @@ fn create_test_entity(id: u64, components: Vec<(&str, serde_json::Value)>) -> En
 
 #[test]
 fn test_observe_state_creation() {
-    let state = ObserveState::new().unwrap().unwrap();
+    let state = ObserveState::new().unwrap();
     assert_eq!(state.max_history_size(), 10);
     assert!(!state.has_last_snapshot());
     assert_eq!(state.history_size(), 0);
@@ -167,8 +167,10 @@ fn test_configure_diff_engine() {
         relative_tolerance: 1e-5,
     };
 
-    let mut new_rules = GameRules::default();
-    new_rules.max_position_change_per_second = Some(50.0);
+    let new_rules = GameRules {
+        max_position_change_per_second: Some(50.0),
+        ..Default::default()
+    };
 
     state.configure_diff(new_config, new_rules);
 
@@ -290,8 +292,10 @@ fn test_unexpected_change_detection() {
 
     // Configure game rules with position change limit
     let fuzzy_config = FuzzyCompareConfig::default();
-    let mut game_rules = GameRules::default();
-    game_rules.max_position_change_per_second = Some(5.0);
+    let game_rules = GameRules {
+        max_position_change_per_second: Some(5.0),
+        ..Default::default()
+    };
 
     state.configure_diff(fuzzy_config, game_rules);
 
@@ -314,7 +318,7 @@ fn test_unexpected_change_detection() {
 
     // The rapid change should be marked as unexpected (though timing may be imprecise in tests)
     // This tests the structure works correctly
-    let unexpected_changes = result.unexpected_changes();
+    let _unexpected_changes = result.unexpected_changes();
     // Note: Due to timing precision in tests, this might not always be detected as unexpected
     // The important thing is that the system is checking for unexpected changes
 }
@@ -324,7 +328,7 @@ fn test_empty_snapshot_handling() {
     let mut state = ObserveState::new().unwrap();
 
     // Add empty snapshot
-    let snapshot1 = state.add_snapshot(vec![]);
+    let _snapshot1 = state.add_snapshot(vec![]);
 
     // Add another empty snapshot
     let snapshot2 = state.add_snapshot(vec![]);

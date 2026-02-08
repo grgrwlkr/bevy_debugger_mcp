@@ -3,8 +3,6 @@
 /// This module provides compile-time optimizations through feature flags,
 /// inline hints, and conditional compilation to minimize overhead when
 /// debugging features are disabled.
-use std::hint;
-
 /// Force inline critical performance functions
 #[inline(always)]
 pub fn inline_hot_path<F, R>(f: F) -> R
@@ -84,11 +82,11 @@ macro_rules! release_only {
 
 /// Prefetch data for better cache performance
 #[inline(always)]
-pub fn prefetch_read<T>(data: *const T) {
+pub fn prefetch_read<T>(_data: *const T) {
     #[cfg(target_arch = "x86_64")]
     {
         unsafe {
-            std::arch::x86_64::_mm_prefetch(data as *const i8, std::arch::x86_64::_MM_HINT_T0);
+            std::arch::x86_64::_mm_prefetch(_data as *const i8, std::arch::x86_64::_MM_HINT_T0);
         }
     }
 }
@@ -159,16 +157,16 @@ impl CompileConfig {
 
 /// Optimized hash map types based on build configuration
 pub mod collections {
-    #[cfg(feature = "ahash")]
+    #[cfg(feature = "fast-hash")]
     pub type FastHashMap<K, V> = std::collections::HashMap<K, V, ahash::RandomState>;
 
-    #[cfg(not(feature = "ahash"))]
+    #[cfg(not(feature = "fast-hash"))]
     pub type FastHashMap<K, V> = std::collections::HashMap<K, V>;
 
-    #[cfg(feature = "ahash")]
+    #[cfg(feature = "fast-hash")]
     pub type FastHashSet<T> = std::collections::HashSet<T, ahash::RandomState>;
 
-    #[cfg(not(feature = "ahash"))]
+    #[cfg(not(feature = "fast-hash"))]
     pub type FastHashSet<T> = std::collections::HashSet<T>;
 }
 

@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -24,7 +24,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 use crate::error::{Error, Result};
@@ -643,7 +642,7 @@ mod tests {
         // Count remaining files
         let mut entries = tokio::fs::read_dir(backup_dir).await.unwrap();
         let mut count = 0;
-        while let Some(_) = entries.next_entry().await.unwrap() {
+        while entries.next_entry().await.unwrap().is_some() {
             count += 1;
         }
 

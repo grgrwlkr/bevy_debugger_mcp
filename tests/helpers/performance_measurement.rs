@@ -1,11 +1,11 @@
+#![allow(dead_code)]
+use serde_json::Value;
+use std::collections::HashMap;
 /// Performance Measurement Utilities
-/// 
+///
 /// Tools for measuring and analyzing performance during tests,
 /// validating that optimizations meet their targets.
-
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use serde_json::{json, Value};
 
 /// Performance measurement context
 pub struct PerformanceMeasurement {
@@ -35,10 +35,10 @@ pub struct PerformanceTargets {
 impl Default for PerformanceTargets {
     fn default() -> Self {
         Self {
-            max_latency_ms: 100.0,  // 100ms max latency
-            max_memory_mb: 50.0,    // 50MB max memory overhead
+            max_latency_ms: 100.0,             // 100ms max latency
+            max_memory_mb: 50.0,               // 50MB max memory overhead
             min_throughput_ops_per_sec: 100.0, // 100 ops/sec min throughput
-            max_cpu_percent: 10.0,  // 10% max CPU usage
+            max_cpu_percent: 10.0,             // 10% max CPU usage
         }
     }
 }
@@ -47,20 +47,20 @@ impl PerformanceTargets {
     /// Create targets based on BEVDBG-012 requirements
     pub fn bevdbg_012_targets() -> Self {
         Self {
-            max_latency_ms: 1.0,    // < 1ms p99 command processing
-            max_memory_mb: 50.0,    // < 50MB memory overhead
+            max_latency_ms: 1.0,                // < 1ms p99 command processing
+            max_memory_mb: 50.0,                // < 50MB memory overhead
             min_throughput_ops_per_sec: 1000.0, // High throughput
-            max_cpu_percent: 3.0,   // < 3% CPU overhead
+            max_cpu_percent: 3.0,               // < 3% CPU overhead
         }
     }
 
     /// Create relaxed targets for testing environment
     pub fn testing_targets() -> Self {
         Self {
-            max_latency_ms: 10.0,   // 10ms max in testing
-            max_memory_mb: 100.0,   // 100MB max in testing
-            min_throughput_ops_per_sec: 50.0,  // Lower throughput acceptable
-            max_cpu_percent: 15.0,  // 15% max in testing
+            max_latency_ms: 10.0,             // 10ms max in testing
+            max_memory_mb: 100.0,             // 100MB max in testing
+            min_throughput_ops_per_sec: 50.0, // Lower throughput acceptable
+            max_cpu_percent: 15.0,            // 15% max in testing
         }
     }
 }
@@ -88,10 +88,10 @@ impl PerformanceMeasurement {
 
     /// Record a measurement with metadata
     pub fn record_with_metadata(
-        &mut self, 
-        operation_name: &str, 
+        &mut self,
+        operation_name: &str,
         duration: Duration,
-        metadata: HashMap<String, Value>
+        metadata: HashMap<String, Value>,
     ) {
         let measurement = Measurement {
             name: operation_name.to_string(),
@@ -99,7 +99,7 @@ impl PerformanceMeasurement {
             timestamp: self.start_time.elapsed(),
             metadata,
         };
-        
+
         self.measurements.push(measurement);
     }
 
@@ -111,7 +111,7 @@ impl PerformanceMeasurement {
         let start = Instant::now();
         let result = operation();
         let duration = start.elapsed();
-        
+
         self.record(operation_name, duration);
         result
     }
@@ -125,7 +125,7 @@ impl PerformanceMeasurement {
         let start = Instant::now();
         let result = operation().await;
         let duration = start.elapsed();
-        
+
         self.record(operation_name, duration);
         result
     }
@@ -137,7 +137,8 @@ impl PerformanceMeasurement {
 
     /// Calculate statistics for a specific operation
     pub fn operation_stats(&self, operation_name: &str) -> Option<OperationStats> {
-        let measurements: Vec<_> = self.measurements
+        let measurements: Vec<_> = self
+            .measurements
             .iter()
             .filter(|m| m.name == operation_name)
             .collect();
@@ -159,8 +160,8 @@ impl PerformanceMeasurement {
 
         // Calculate percentiles
         let p50_duration = sorted_durations[count / 2];
-        let p95_duration = sorted_durations[(count as f64 * 0.95) as usize.min(count - 1)];
-        let p99_duration = sorted_durations[(count as f64 * 0.99) as usize.min(count - 1)];
+        let p95_duration = sorted_durations[((count as f64 * 0.95) as usize).min(count - 1)];
+        let p99_duration = sorted_durations[((count as f64 * 0.99) as usize).min(count - 1)];
 
         Some(OperationStats {
             operation_name: operation_name.to_string(),
@@ -206,14 +207,14 @@ impl PerformanceMeasurement {
     /// Check if performance meets targets
     pub fn meets_targets(&self) -> bool {
         let summary = self.performance_summary();
-        
+
         // Check overall throughput
         if summary.throughput_ops_per_sec < self.targets.min_throughput_ops_per_sec {
             return false;
         }
 
         // Check individual operation latencies
-        for (_, stats) in &summary.operation_stats {
+        for stats in summary.operation_stats.values() {
             if stats.p99_duration.as_millis() as f64 > self.targets.max_latency_ms {
                 return false;
             }
@@ -225,7 +226,7 @@ impl PerformanceMeasurement {
     /// Generate a detailed performance report
     pub fn generate_report(&self) -> String {
         let summary = self.performance_summary();
-        
+
         let mut report = format!(
             "Performance Report: {}\n\
              Total Duration: {:.2}s\n\
@@ -240,10 +241,22 @@ impl PerformanceMeasurement {
         );
 
         report.push_str("Targets:\n");
-        report.push_str(&format!("  Max Latency: {:.1}ms\n", self.targets.max_latency_ms));
-        report.push_str(&format!("  Max Memory: {:.1}MB\n", self.targets.max_memory_mb));
-        report.push_str(&format!("  Min Throughput: {:.1} ops/sec\n", self.targets.min_throughput_ops_per_sec));
-        report.push_str(&format!("  Max CPU: {:.1}%\n", self.targets.max_cpu_percent));
+        report.push_str(&format!(
+            "  Max Latency: {:.1}ms\n",
+            self.targets.max_latency_ms
+        ));
+        report.push_str(&format!(
+            "  Max Memory: {:.1}MB\n",
+            self.targets.max_memory_mb
+        ));
+        report.push_str(&format!(
+            "  Min Throughput: {:.1} ops/sec\n",
+            self.targets.min_throughput_ops_per_sec
+        ));
+        report.push_str(&format!(
+            "  Max CPU: {:.1}%\n",
+            self.targets.max_cpu_percent
+        ));
 
         report.push_str("\nOperation Statistics:\n");
         for (operation_name, stats) in &summary.operation_stats {
@@ -269,8 +282,10 @@ impl PerformanceMeasurement {
             // Check against targets
             let p99_ms = stats.p99_duration.as_millis() as f64;
             if p99_ms > self.targets.max_latency_ms {
-                report.push_str(&format!("    ⚠️  P99 latency exceeds target ({:.2}ms > {:.1}ms)\n", 
-                                       p99_ms, self.targets.max_latency_ms));
+                report.push_str(&format!(
+                    "    ⚠️  P99 latency exceeds target ({:.2}ms > {:.1}ms)\n",
+                    p99_ms, self.targets.max_latency_ms
+                ));
             }
         }
 
@@ -312,7 +327,7 @@ where
     let start = Instant::now();
     let result = operation().await;
     let duration = start.elapsed();
-    
+
     println!("Operation '{}' completed in {:?}", operation_name, duration);
     (result, duration)
 }
@@ -346,10 +361,11 @@ impl RegressionDetector {
             if let Some(baseline_stats) = self.baseline_measurements.get(operation_name) {
                 let current_p99_ms = current_stats.p99_duration.as_millis() as f64;
                 let baseline_p99_ms = baseline_stats.p99_duration.as_millis() as f64;
-                
+
                 if baseline_p99_ms > 0.0 {
-                    let change_percent = ((current_p99_ms - baseline_p99_ms) / baseline_p99_ms) * 100.0;
-                    
+                    let change_percent =
+                        ((current_p99_ms - baseline_p99_ms) / baseline_p99_ms) * 100.0;
+
                     if change_percent > self.threshold_percent {
                         regressions.push(PerformanceRegression {
                             operation_name: operation_name.clone(),
@@ -419,7 +435,10 @@ impl RegressionReport {
         if self.regressions.is_empty() {
             report.push_str("✅ No performance regressions detected\n\n");
         } else {
-            report.push_str(&format!("❌ {} performance regressions found:\n", self.regressions.len()));
+            report.push_str(&format!(
+                "❌ {} performance regressions found:\n",
+                self.regressions.len()
+            ));
             for regression in &self.regressions {
                 report.push_str(&format!(
                     "  • {}: {:.2}ms → {:.2}ms ({:+.1}%)\n",
@@ -433,7 +452,10 @@ impl RegressionReport {
         }
 
         if !self.improvements.is_empty() {
-            report.push_str(&format!("🚀 {} performance improvements found:\n", self.improvements.len()));
+            report.push_str(&format!(
+                "🚀 {} performance improvements found:\n",
+                self.improvements.len()
+            ));
             for improvement in &self.improvements {
                 report.push_str(&format!(
                     "  • {}: {:.2}ms → {:.2}ms ({:.1}% faster)\n",
@@ -457,16 +479,16 @@ mod tests {
     #[test]
     fn test_performance_measurement_basic() {
         let mut measurement = PerformanceMeasurement::new("test");
-        
+
         // Measure a simple operation
         let result = measurement.measure("test_op", || {
             std::thread::sleep(Duration::from_millis(10));
             42
         });
-        
+
         assert_eq!(result, 42);
         assert_eq!(measurement.measurements().len(), 1);
-        
+
         let stats = measurement.operation_stats("test_op").unwrap();
         assert_eq!(stats.count, 1);
         assert!(stats.avg_duration >= Duration::from_millis(9)); // Allow some variance
@@ -475,15 +497,17 @@ mod tests {
     #[tokio::test]
     async fn test_async_measurement() {
         let mut measurement = PerformanceMeasurement::new("async_test");
-        
-        let result = measurement.measure_async("async_op", || async {
-            sleep(Duration::from_millis(5)).await;
-            "done"
-        }).await;
-        
+
+        let result = measurement
+            .measure_async("async_op", || async {
+                sleep(Duration::from_millis(5)).await;
+                "done"
+            })
+            .await;
+
         assert_eq!(result, "done");
         assert_eq!(measurement.measurements().len(), 1);
-        
+
         let stats = measurement.operation_stats("async_op").unwrap();
         assert!(stats.avg_duration >= Duration::from_millis(4));
     }
@@ -492,16 +516,16 @@ mod tests {
     fn test_performance_targets() {
         let targets = PerformanceTargets::bevdbg_012_targets();
         let mut measurement = PerformanceMeasurement::with_targets("strict_test", targets);
-        
+
         // Add a measurement that meets targets
         measurement.record("fast_op", Duration::from_nanos(500_000)); // 0.5ms
-        
+
         // Add a measurement that exceeds targets
         measurement.record("slow_op", Duration::from_millis(5)); // 5ms
-        
+
         // Overall should not meet targets due to slow operation
         assert!(!measurement.meets_targets());
-        
+
         let report = measurement.generate_report();
         assert!(report.contains("✗")); // Should show failure
         assert!(report.contains("P99 latency exceeds target"));
@@ -514,22 +538,22 @@ mod tests {
         baseline_measurement.record("op1", Duration::from_millis(10));
         baseline_measurement.record("op2", Duration::from_millis(5));
         let baseline = baseline_measurement.performance_summary();
-        
+
         // Create current measurements with regression
         let mut current_measurement = PerformanceMeasurement::new("current");
         current_measurement.record("op1", Duration::from_millis(15)); // 50% slower
-        current_measurement.record("op2", Duration::from_millis(3));  // 40% faster
+        current_measurement.record("op2", Duration::from_millis(3)); // 40% faster
         let current = current_measurement.performance_summary();
-        
+
         // Check for regressions
         let mut detector = RegressionDetector::new(20.0); // 20% threshold
         detector.set_baseline(&baseline);
         let report = detector.check_regression(&current);
-        
+
         assert!(report.has_regressions());
         assert_eq!(report.regressions.len(), 1);
         assert_eq!(report.improvements.len(), 1);
-        
+
         let report_str = report.generate_report();
         assert!(report_str.contains("performance regressions found"));
         assert!(report_str.contains("performance improvements found"));
@@ -540,8 +564,9 @@ mod tests {
         let (result, duration) = measure_async("test_operation", || async {
             sleep(Duration::from_millis(1)).await;
             "completed"
-        }).await;
-        
+        })
+        .await;
+
         assert_eq!(result, "completed");
         assert!(duration >= Duration::from_millis(1));
     }

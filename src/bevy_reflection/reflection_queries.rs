@@ -22,16 +22,14 @@
 //! capabilities to enable more sophisticated entity and component queries.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::bevy_reflection::inspector::{
-    BevyReflectionInspector, ReflectionMetadata, TypeCategory,
-};
-use crate::bevy_reflection::type_registry_tools::{TypeQuery, TypeRegistryManager};
+use crate::bevy_reflection::inspector::{BevyReflectionInspector, ReflectionMetadata};
+use crate::bevy_reflection::type_registry_tools::TypeRegistryManager;
 use crate::brp_client::BrpClient;
 use crate::brp_messages::{BrpRequest, ComponentValue, EntityData};
 use crate::error::{Error, Result};
@@ -42,6 +40,7 @@ pub struct ReflectionQueryEngine {
     /// Reflection inspector for component analysis
     reflection_inspector: BevyReflectionInspector,
     /// Type registry manager for type discovery
+    #[allow(dead_code)]
     type_registry: TypeRegistryManager,
     /// Query cache for performance
     query_cache: Arc<RwLock<HashMap<String, CachedQueryResult>>>,
@@ -370,9 +369,7 @@ impl ReflectionQueryEngine {
         limits: &QueryLimits,
     ) -> Result<Vec<ReflectedEntityData>> {
         let mut reflected_entities = Vec::new();
-        let mut processed_count = 0;
-
-        for entity in entities {
+        for (processed_count, entity) in entities.into_iter().enumerate() {
             if processed_count >= limits.max_entities {
                 warn!(
                     "Query limit reached: max_entities = {}",
@@ -383,7 +380,6 @@ impl ReflectionQueryEngine {
 
             let reflected_entity = self.enhance_single_entity(entity, params, limits).await?;
             reflected_entities.push(reflected_entity);
-            processed_count += 1;
         }
 
         Ok(reflected_entities)
@@ -484,8 +480,8 @@ impl ReflectionQueryEngine {
         entity: &EntityData,
     ) -> ComponentRelationships {
         let mut dependents = Vec::new();
-        let mut dependencies = Vec::new();
-        let mut conflicts = Vec::new();
+        let dependencies = Vec::new();
+        let conflicts = Vec::new();
 
         // Analyze common Bevy component relationships
         match component_type {
@@ -579,30 +575,30 @@ impl ReflectionQueryEngine {
 
     /// Calculate component complexity score
     async fn calculate_component_complexity(&self, component_value: &ComponentValue) -> f64 {
-        let mut complexity = 0.0;
-
-        match component_value {
-            Value::Null => complexity = 0.1,
-            Value::Bool(_) => complexity = 0.2,
-            Value::Number(_) => complexity = 0.3,
-            Value::String(s) => complexity = 0.4 + (s.len() as f64 / 1000.0).min(0.3),
+        let complexity = match component_value {
+            Value::Null => 0.1,
+            Value::Bool(_) => 0.2,
+            Value::Number(_) => 0.3,
+            Value::String(s) => 0.4 + (s.len() as f64 / 1000.0).min(0.3),
             Value::Array(arr) => {
-                complexity = 0.6 + (arr.len() as f64 / 100.0).min(0.3);
+                let mut complexity = 0.6 + (arr.len() as f64 / 100.0).min(0.3);
                 // Add complexity for nested structures
                 for item in arr.iter().take(10) {
                     // Sample first 10 items
                     complexity += Box::pin(self.calculate_component_complexity(item)).await * 0.1;
                 }
+                complexity
             }
             Value::Object(obj) => {
-                complexity = 0.7 + (obj.len() as f64 / 50.0).min(0.2);
+                let mut complexity = 0.7 + (obj.len() as f64 / 50.0).min(0.2);
                 // Add complexity for nested structures
                 for value in obj.values().take(10) {
                     // Sample first 10 fields
                     complexity += Box::pin(self.calculate_component_complexity(value)).await * 0.1;
                 }
+                complexity
             }
-        }
+        };
 
         complexity.clamp(0.0_f64, 1.0_f64)
     }
@@ -665,7 +661,7 @@ impl ReflectionQueryEngine {
     }
 
     /// Calculate query complexity score
-    async fn calculate_query_complexity(&self, query: &ReflectionQuery) -> f64 {
+    pub async fn calculate_query_complexity(&self, query: &ReflectionQuery) -> f64 {
         let mut complexity = 0.3_f64; // Base complexity
 
         if query.reflection_params.include_reflection {
@@ -780,6 +776,7 @@ impl Default for QueryLimits {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[tokio::test]
     async fn test_reflection_query_engine_creation() {

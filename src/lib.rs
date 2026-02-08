@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(clippy::result_large_err)]
+
 //! # Bevy Debugger MCP
 //!
 //! AI-assisted debugging for Bevy games through Claude Code using Model Context Protocol.

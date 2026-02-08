@@ -102,6 +102,12 @@ pub struct DebugCommandRouter {
     _cleanup_handle: tokio::task::JoinHandle<()>,
 }
 
+impl Default for DebugCommandRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DebugCommandRouter {
     /// Create a new debug command router
     pub fn new() -> Self {
@@ -198,7 +204,7 @@ impl DebugCommandRouter {
                 }
             }
             DebugCommand::ExecuteQuery { query, limit, .. } => {
-                if query.filter.with.as_ref().map_or(false, |w| w.len() > 20) {
+                if query.filter.with.as_ref().is_some_and(|w| w.len() > 20) {
                     return Err(Error::DebugError(
                         "Too many components in query (max 20)".to_string(),
                     ));
@@ -242,15 +248,16 @@ impl DebugCommandRouter {
                     }
                 }
             }
-            DebugCommand::StopMemoryProfiling { session_id } => {
-                if let Some(id) = session_id {
-                    if id.len() > 100 {
-                        return Err(Error::DebugError(
-                            "Session ID too long (max 100 chars)".to_string(),
-                        ));
-                    }
+            DebugCommand::StopMemoryProfiling {
+                session_id: Some(id),
+            } => {
+                if id.len() > 100 {
+                    return Err(Error::DebugError(
+                        "Session ID too long (max 100 chars)".to_string(),
+                    ));
                 }
             }
+            DebugCommand::StopMemoryProfiling { .. } => {}
             DebugCommand::Custom { name, .. } => {
                 if name.len() > 100 {
                     return Err(Error::DebugError(

@@ -769,8 +769,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_cleanup_logic() {
-        let mut config = SessionManagerConfig::default();
-        config.default_cleanup_hours = 0; // Immediate cleanup for testing
+        let config = SessionManagerConfig {
+            default_cleanup_hours: 0, // Immediate cleanup for testing
+            ..Default::default()
+        };
 
         let manager = SessionManager::new(config);
         manager.start().await.unwrap();

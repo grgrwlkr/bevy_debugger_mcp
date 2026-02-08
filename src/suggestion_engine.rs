@@ -20,10 +20,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::brp_messages::DebugCommand;
-use crate::error::Result;
 use crate::pattern_learning::{AnonymizedCommand, DebugPattern, PatternLearningSystem};
 
 /// Maximum number of suggestions to generate
@@ -109,6 +108,7 @@ struct SuggestionTemplate {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum SuggestionCondition {
     HighEntityCount(usize),
     LowFPS(f32),

@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(clippy::result_large_err)]
+
 use is_terminal::IsTerminal;
 use std::sync::Arc;
 use tokio::signal;

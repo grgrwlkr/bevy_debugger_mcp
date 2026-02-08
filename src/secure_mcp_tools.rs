@@ -127,7 +127,7 @@ impl SecureMcpTools {
     }
 
     /// Log a successful tool operation
-    async fn log_tool_success(&self, claims: &Claims, operation: &str, resource: Option<&str>) {
+    async fn log_tool_success(&self, claims: &Claims, operation: &str, _resource: Option<&str>) {
         // This would typically be handled by the security manager's audit logging
         debug!(
             "Tool operation successful: {} by user {}",
@@ -233,10 +233,10 @@ impl SecureMcpTools {
         };
 
         // Remove auth parameters before passing to the actual tool
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let observe_req: ObserveRequest = serde_json::from_value(req).map_err(|e| {
             McpError::invalid_params(format!("Invalid observe parameters: {}", e), None)
@@ -293,10 +293,10 @@ impl SecureMcpTools {
         };
 
         // Remove auth parameters
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let exp_req: ExperimentRequest = serde_json::from_value(req).map_err(|e| {
             McpError::invalid_params(format!("Invalid experiment parameters: {}", e), None)
@@ -351,10 +351,10 @@ impl SecureMcpTools {
             }
         };
 
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let hyp_req: HypothesisRequest = serde_json::from_value(req).map_err(|e| {
             McpError::invalid_params(format!("Invalid hypothesis parameters: {}", e), None)
@@ -410,10 +410,10 @@ impl SecureMcpTools {
             }
         };
 
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let anom_req: AnomalyRequest = serde_json::from_value(req).map_err(|e| {
             McpError::invalid_params(format!("Invalid anomaly detection parameters: {}", e), None)
@@ -469,10 +469,10 @@ impl SecureMcpTools {
             }
         };
 
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let stress_req: StressTestRequest = serde_json::from_value(req).map_err(|e| {
             McpError::invalid_params(format!("Invalid stress test parameters: {}", e), None)
@@ -529,10 +529,10 @@ impl SecureMcpTools {
             }
         };
 
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let replay_req: ReplayRequest = serde_json::from_value(req).map_err(|e| {
             McpError::invalid_params(format!("Invalid replay parameters: {}", e), None)
@@ -593,10 +593,10 @@ impl SecureMcpTools {
             McpError::invalid_params("Authentication token required".to_string(), None)
         })?;
 
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let create_req: CreateUserRequest = serde_json::from_value(req).map_err(|e| {
             McpError::invalid_params(format!("Invalid create user parameters: {}", e), None)
@@ -663,10 +663,10 @@ impl SecureMcpTools {
             McpError::invalid_params("Authentication token required".to_string(), None)
         })?;
 
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let delete_req: DeleteUserRequest = serde_json::from_value(req).map_err(|e| {
             McpError::invalid_params(format!("Invalid delete user parameters: {}", e), None)
@@ -774,10 +774,10 @@ impl SecureMcpTools {
             McpError::invalid_params("Authentication token required".to_string(), None)
         })?;
 
-        req.as_object_mut().map(|obj| {
+        if let Some(obj) = req.as_object_mut() {
             obj.remove("auth_token");
             obj.remove("authorization");
-        });
+        }
 
         let audit_req: AuditLogRequest = serde_json::from_value(req).unwrap_or(AuditLogRequest {
             limit: Some(100),

@@ -100,10 +100,18 @@ pub struct DefaultBevyObservability {
     operation_history: Vec<OperationRecord>,
 }
 
+impl Default for DefaultBevyObservability {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone)]
 struct OperationRecord {
+    #[allow(dead_code)]
     operation: String,
     duration: Duration,
+    #[allow(dead_code)]
     success: bool,
     timestamp: Instant,
 }
@@ -429,12 +437,14 @@ mod tests {
     #[test]
     fn test_health_status_calculation() {
         let mut observability = DefaultBevyObservability::new();
+        observability.metrics.brp_connection_status = ConnectionStatus::Connected;
         observability.metrics.memory_pressure_level = MemoryPressure::High;
+        observability.metrics.frame_time_ms = 10.0;
 
         let health = observability.get_health_status();
 
         assert_eq!(health.overall_status, HealthLevel::Warning);
         assert!(!health.memory_usage_healthy);
-        assert!(health.issues.len() > 0);
+        assert!(!health.issues.is_empty());
     }
 }

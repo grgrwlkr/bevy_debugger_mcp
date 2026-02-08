@@ -22,7 +22,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::brp_messages::DebugCommand;
 use crate::error::Result;
@@ -210,9 +210,16 @@ pub struct PatternLearningSystem {
     /// Pattern miner
     miner: PatternMiner,
     /// Privacy noise generator
+    #[allow(dead_code)]
     noise_scale: f64,
     /// Session buffer for k-anonymity
     session_buffer: Arc<RwLock<VecDeque<Vec<AnonymizedCommand>>>>,
+}
+
+impl Default for PatternLearningSystem {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PatternLearningSystem {

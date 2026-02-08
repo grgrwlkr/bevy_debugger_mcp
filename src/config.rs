@@ -158,6 +158,7 @@ impl Default for Config {
 }
 
 impl Config {
+    #[allow(clippy::result_large_err)]
     pub fn from_env() -> Result<Self> {
         let bevy_brp_host = env::var("BEVY_BRP_HOST").unwrap_or_else(|_| "localhost".to_string());
         let bevy_brp_port = env::var("BEVY_BRP_PORT")
@@ -304,6 +305,7 @@ impl Config {
     }
 
     /// Validate configuration values
+    #[allow(clippy::result_large_err)]
     pub fn validate(&self) -> Result<()> {
         if self.resilience.circuit_breaker.failure_threshold == 0 {
             return Err(Error::Config(

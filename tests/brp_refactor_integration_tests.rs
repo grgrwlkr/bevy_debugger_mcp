@@ -7,14 +7,14 @@ use bevy_debugger_mcp::brp_client::BrpClient;
 use bevy_debugger_mcp::brp_command_handler::{
     BrpCommandHandler, CommandHandlerMetadata, CommandHandlerRegistry, CommandVersion,
 };
-use bevy_debugger_mcp::brp_messages::{BrpRequest, BrpResponse, DebugCommand};
+use bevy_debugger_mcp::brp_messages::{BrpRequest, BrpResponse, BrpResult, DebugCommand};
 use bevy_debugger_mcp::config::Config;
 use bevy_debugger_mcp::debug_brp_handler::DebugBrpHandler;
-use bevy_debugger_mcp::debug_command_processor::{DebugCommandProcessor, DebugCommandRouter};
+use bevy_debugger_mcp::debug_command_processor::DebugCommandRouter;
 use bevy_debugger_mcp::error::Result;
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -40,7 +40,7 @@ impl BrpCommandHandler for MockCommandHandler {
     }
 
     async fn handle(&self, _request: BrpRequest) -> Result<BrpResponse> {
-        Ok(BrpResponse::Success(json!({ "mock": true })))
+        Ok(BrpResponse::Success(Box::new(BrpResult::Success)))
     }
 
     fn priority(&self) -> i32 {
@@ -146,7 +146,15 @@ async fn test_debug_handler_integration() {
         .contains(&"InspectEntity".to_string()));
 
     // Test can_handle
-    let debug_request = BrpRequest::Debug(DebugCommand::InspectEntity { entity_id: 123 });
+    let debug_request = BrpRequest::Debug {
+        command: DebugCommand::InspectEntity {
+            entity_id: 123,
+            include_metadata: None,
+            include_relationships: None,
+        },
+        correlation_id: "test-correlation".to_string(),
+        priority: None,
+    };
     assert!(debug_handler.can_handle(&debug_request));
 
     let non_debug_request = BrpRequest::ListEntities { filter: None };
@@ -158,14 +166,20 @@ async fn test_backward_compatibility() {
     let config = Config::default();
     let client = BrpClient::new(&config);
 
-    // Verify core handler is registered by default
+    client.init().await.unwrap();
+
+    // Verify core handler is registered after init
     let registry = client.command_registry();
 
     // Core requests should be handleable
     let core_requests = vec![
         BrpRequest::ListEntities { filter: None },
         BrpRequest::ListComponents,
-        BrpRequest::Query(json!({})),
+        BrpRequest::Query {
+            filter: None,
+            limit: None,
+            strict: Some(false),
+        },
     ];
 
     for request in core_requests {
@@ -183,7 +197,7 @@ async fn test_handler_priority_ordering() {
     let registry = CommandHandlerRegistry::new();
 
     // Register handlers with different priorities
-    for priority in vec![5, 15, 10, 20, 1] {
+    for priority in [5, 15, 10, 20, 1] {
         let handler = Arc::new(MockCommandHandler {
             name: format!("handler_{}", priority),
             priority,
@@ -192,7 +206,11 @@ async fn test_handler_priority_ordering() {
     }
 
     // The handler with highest priority (20) should be selected
-    let request = BrpRequest::Query(json!({}));
+    let request = BrpRequest::Query {
+        filter: None,
+        limit: None,
+        strict: Some(false),
+    };
     let handler = registry.find_handler(&request).await.unwrap();
 
     assert_eq!(handler.priority(), 20);
@@ -218,7 +236,7 @@ async fn test_handler_validation() {
         }
 
         async fn handle(&self, _request: BrpRequest) -> Result<BrpResponse> {
-            Ok(BrpResponse::Success(Value::Null))
+            Ok(BrpResponse::Success(Box::new(BrpResult::Success)))
         }
 
         async fn validate(&self, request: &BrpRequest) -> Result<()> {
@@ -235,6 +253,12 @@ async fn test_handler_validation() {
 
     let registry = CommandHandlerRegistry::new();
     registry.register(Arc::new(ValidatingHandler)).await;
+    registry
+        .get_validator()
+        .get_entity_tracker()
+        .write()
+        .await
+        .update_entities(vec![123]);
 
     // Valid request should pass
     let valid_request = BrpRequest::Get {
@@ -256,7 +280,13 @@ async fn test_no_handler_error() {
     let registry = CommandHandlerRegistry::new();
 
     // Request with no registered handler
-    let request = BrpRequest::Screenshot(json!({}));
+    let request = BrpRequest::Screenshot {
+        path: None,
+        warmup_duration: None,
+        capture_delay: None,
+        wait_for_render: None,
+        description: None,
+    };
     let result = registry.process(request).await;
 
     assert!(result.is_err());
@@ -268,17 +298,30 @@ async fn test_no_handler_error() {
 async fn test_all_commands_have_handlers() {
     let config = Config::default();
     let client = BrpClient::new(&config);
+    client.init().await.unwrap();
     let registry = client.command_registry();
 
     // List of all command types that should be supported
     let test_requests = vec![
-        BrpRequest::Query(json!({})),
-        BrpRequest::Get(123),
-        BrpRequest::Set(json!({})),
+        BrpRequest::Query {
+            filter: None,
+            limit: None,
+            strict: Some(false),
+        },
+        BrpRequest::Get {
+            entity: 123,
+            components: None,
+        },
+        BrpRequest::Set {
+            entity: 123,
+            components: HashMap::new(),
+        },
         BrpRequest::ListEntities { filter: None },
         BrpRequest::ListComponents,
-        BrpRequest::SpawnEntity(json!({})),
-        BrpRequest::DestroyEntity(123),
+        BrpRequest::SpawnEntity {
+            components: Vec::new(),
+        },
+        BrpRequest::DeleteEntity { entity_id: 123 },
     ];
 
     for request in test_requests {

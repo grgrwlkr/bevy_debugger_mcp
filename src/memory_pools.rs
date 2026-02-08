@@ -1,11 +1,8 @@
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use crate::brp_messages::{BrpRequest, BrpResponse, BrpResult, ComponentFilter, QueryFilter};
-use crate::error::Result;
+use crate::brp_messages::{BrpRequest, BrpResponse, BrpResult, ComponentFilter};
 use crate::resource_manager::ObjectPool;
 
 /// Specialized memory pools for frequently allocated game debugging objects
@@ -133,8 +130,9 @@ impl GameDebugPools {
 
     /// Get a pooled JSON Value, reset to Null
     pub async fn get_json_value(&self) -> Value {
-        let value = self.json_value_pool.acquire().await;
-        Value::Null
+        let mut value = self.json_value_pool.acquire().await;
+        value.take();
+        value
     }
 
     /// Return a JSON Value to the pool
@@ -142,7 +140,7 @@ impl GameDebugPools {
         self.json_value_pool.release(value).await;
     }
 
-    /// Get a pooled HashMap, cleared for reuse  
+    /// Get a pooled HashMap, cleared for reuse
     pub async fn get_hashmap(&self) -> HashMap<String, Value> {
         let mut map = self.hashmap_pool.acquire().await;
 
@@ -276,7 +274,7 @@ impl PoolStats {
 
 /// Global instance of the game debug pools
 pub static GAME_POOLS: once_cell::sync::Lazy<GameDebugPools> =
-    once_cell::sync::Lazy::new(|| GameDebugPools::new());
+    once_cell::sync::Lazy::new(GameDebugPools::new);
 
 /// Convenience macro for getting pooled objects with automatic return
 #[macro_export]
@@ -359,7 +357,7 @@ mod tests {
 
         // Test pool stats
         let stats = pools.get_pool_stats().await;
-        assert!(stats.total_pooled_objects() >= 0);
+        assert!(stats.total_pooled_objects() >= stats.string_vec_pool_size);
     }
 
     #[tokio::test]

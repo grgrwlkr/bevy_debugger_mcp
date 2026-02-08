@@ -17,7 +17,7 @@
  */
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -150,8 +150,10 @@ pub struct WorkflowAutomation {
     /// Active executions
     active_executions: Arc<RwLock<HashMap<String, ExecutionContext>>>,
     /// Pattern learning system
+    #[allow(dead_code)]
     pattern_system: Arc<PatternLearningSystem>,
     /// Suggestion engine
+    #[allow(dead_code)]
     suggestion_engine: Arc<SuggestionEngine>,
     /// Default user preferences
     default_preferences: UserPreferences,

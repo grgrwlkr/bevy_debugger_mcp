@@ -174,7 +174,7 @@ pub enum BrpRequest {
 }
 
 /// Query filter for selecting entities
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[non_exhaustive]
 pub struct QueryFilter {
     /// Entities must have all of these components
@@ -183,16 +183,6 @@ pub struct QueryFilter {
     pub without: Option<Vec<ComponentTypeId>>,
     /// Component value filters
     pub where_clause: Option<Vec<ComponentFilter>>,
-}
-
-impl Default for QueryFilter {
-    fn default() -> Self {
-        Self {
-            with: None,
-            without: None,
-            where_clause: None,
-        }
-    }
 }
 
 /// Filter for component values

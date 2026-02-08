@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Performance measurement point
 #[derive(Debug, Clone)]
@@ -313,22 +313,16 @@ impl HotPathProfiler {
 }
 
 /// Global profiler instance
-static mut GLOBAL_PROFILER: Option<HotPathProfiler> = None;
-static INIT: std::sync::Once = std::sync::Once::new();
+static GLOBAL_PROFILER: std::sync::OnceLock<HotPathProfiler> = std::sync::OnceLock::new();
 
 /// Initialize the global profiler
 pub fn init_profiler() -> &'static HotPathProfiler {
-    unsafe {
-        INIT.call_once(|| {
-            GLOBAL_PROFILER = Some(HotPathProfiler::new(1000)); // Keep 1000 measurements per operation
-        });
-        GLOBAL_PROFILER.as_ref().unwrap()
-    }
+    GLOBAL_PROFILER.get_or_init(|| HotPathProfiler::new(1000)) // Keep 1000 measurements per operation
 }
 
 /// Get the global profiler instance
 pub fn get_profiler() -> &'static HotPathProfiler {
-    unsafe { GLOBAL_PROFILER.as_ref().unwrap_or_else(|| init_profiler()) }
+    init_profiler()
 }
 
 /// Macro for easy profiling of code blocks
@@ -428,7 +422,7 @@ mod tests {
         let profiler = HotPathProfiler::new(100);
 
         // Record multiple operations with different call counts
-        for i in 0..10 {
+        for _ in 0..10 {
             let measurement = PerfMeasurement {
                 operation: "frequent_op".to_string(),
                 duration: Duration::from_millis(10),
@@ -439,7 +433,7 @@ mod tests {
             profiler.record(measurement).await;
         }
 
-        for i in 0..5 {
+        for _ in 0..5 {
             let measurement = PerfMeasurement {
                 operation: "less_frequent_op".to_string(),
                 duration: Duration::from_millis(20),

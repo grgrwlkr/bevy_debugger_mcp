@@ -196,8 +196,10 @@ fn test_game_rules_immutable_components() {
 
 #[test]
 fn test_game_rules_position_rate_limit() {
-    let mut rules = GameRules::default();
-    rules.max_position_change_per_second = Some(10.0);
+    let rules = GameRules {
+        max_position_change_per_second: Some(10.0),
+        ..Default::default()
+    };
 
     let mut change = Change::new(
         ChangeType::ComponentModified,
@@ -213,8 +215,10 @@ fn test_game_rules_position_rate_limit() {
 
 #[test]
 fn test_game_rules_velocity_rate_limit() {
-    let mut rules = GameRules::default();
-    rules.max_velocity_change_per_second = Some(5.0);
+    let rules = GameRules {
+        max_velocity_change_per_second: Some(5.0),
+        ..Default::default()
+    };
 
     let mut change = Change::new(
         ChangeType::ComponentModified,
@@ -729,8 +733,10 @@ fn test_engine_configuration_updates() {
     };
     engine.set_fuzzy_config(new_config);
 
-    let mut new_rules = GameRules::default();
-    new_rules.max_position_change_per_second = Some(100.0);
+    let new_rules = GameRules {
+        max_position_change_per_second: Some(100.0),
+        ..Default::default()
+    };
     engine.set_game_rules(new_rules);
 
     // Test that the new configuration is applied

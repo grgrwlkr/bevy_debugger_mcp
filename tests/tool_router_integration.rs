@@ -8,7 +8,6 @@ use bevy_debugger_mcp::mcp_tools::{
     BevyDebuggerTools, ExperimentRequest, HypothesisRequest, ObserveRequest,
 };
 use rmcp::handler::server::{tool::Parameters, ServerHandler};
-use rmcp::model::{CallToolResult, Content};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -17,7 +16,7 @@ use tokio::sync::RwLock;
 #[tokio::test]
 async fn test_tools_creation() {
     let config = Config::default();
-    let brp_client = Arc::new(RwLock::new(BrpClient::new(config)));
+    let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let tools = BevyDebuggerTools::new(brp_client);
 
     // Test ServerHandler implementation
@@ -31,13 +30,14 @@ async fn test_tools_creation() {
 #[tokio::test]
 async fn test_observe_tool_structure() {
     let config = Config::default();
-    let brp_client = Arc::new(RwLock::new(BrpClient::new(config)));
+    let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let tools = BevyDebuggerTools::new(brp_client);
 
     let observe_req = ObserveRequest {
         query: "test query".to_string(),
         diff: false,
         detailed: false,
+        reflection: false,
     };
 
     let params = Parameters(observe_req);
@@ -60,7 +60,7 @@ async fn test_observe_tool_structure() {
 #[tokio::test]
 async fn test_experiment_tool_structure() {
     let config = Config::default();
-    let brp_client = Arc::new(RwLock::new(BrpClient::new(config)));
+    let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let tools = BevyDebuggerTools::new(brp_client);
 
     let experiment_req = ExperimentRequest {
@@ -87,7 +87,7 @@ async fn test_experiment_tool_structure() {
 #[tokio::test]
 async fn test_hypothesis_tool_structure() {
     let config = Config::default();
-    let brp_client = Arc::new(RwLock::new(BrpClient::new(config)));
+    let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let tools = BevyDebuggerTools::new(brp_client);
 
     let hypothesis_req = HypothesisRequest {
@@ -117,6 +117,7 @@ fn test_parameter_serialization() {
         query: "test".to_string(),
         diff: true,
         detailed: false,
+        reflection: false,
     };
 
     let json = serde_json::to_string(&observe_req).unwrap();

@@ -1,10 +1,13 @@
+#![allow(dead_code)]
 /// Memory Usage Tracking
-/// 
+///
 /// Utilities for tracking memory usage during tests to validate
 /// that performance optimizations are working correctly.
-
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+
+static SIMULATED_MEMORY: OnceLock<AtomicUsize> = OnceLock::new();
 
 /// Simple memory usage tracker
 pub struct MemoryUsageTracker {
@@ -44,7 +47,7 @@ impl MemoryUsageTracker {
             allocation_count: None,
             deallocation_count: None,
         };
-        
+
         self.measurements.push(measurement);
     }
 
@@ -85,10 +88,10 @@ impl MemoryUsageTracker {
 
         let first = &self.measurements[0];
         let last = &self.measurements[self.measurements.len() - 1];
-        
+
         let memory_diff = last.memory_usage as f64 - first.memory_usage as f64;
         let time_diff = (last.timestamp - first.timestamp).as_secs_f64();
-        
+
         if time_diff > 0.0 {
             memory_diff / time_diff
         } else {
@@ -142,29 +145,20 @@ impl MemoryUsageTracker {
         // - On Linux: parse /proc/self/status
         // - On macOS: use task_info
         // - On Windows: use GetProcessMemoryInfo
-        
+
         // For testing, we'll simulate memory usage
-        use std::sync::OnceLock;
-        static SIMULATED_MEMORY: OnceLock<AtomicUsize> = OnceLock::new();
-        
         let memory = SIMULATED_MEMORY.get_or_init(|| AtomicUsize::new(50_000_000)); // 50MB baseline
         memory.load(Ordering::Relaxed)
     }
 
     /// Simulate memory allocation (for testing)
     pub fn simulate_allocation(&self, bytes: usize) {
-        use std::sync::OnceLock;
-        static SIMULATED_MEMORY: OnceLock<AtomicUsize> = OnceLock::new();
-        
         let memory = SIMULATED_MEMORY.get_or_init(|| AtomicUsize::new(50_000_000));
         memory.fetch_add(bytes, Ordering::Relaxed);
     }
 
     /// Simulate memory deallocation (for testing)
     pub fn simulate_deallocation(&self, bytes: usize) {
-        use std::sync::OnceLock;
-        static SIMULATED_MEMORY: OnceLock<AtomicUsize> = OnceLock::new();
-        
         let memory = SIMULATED_MEMORY.get_or_init(|| AtomicUsize::new(50_000_000));
         memory.fetch_sub(bytes, Ordering::Relaxed);
     }
@@ -191,9 +185,8 @@ impl MemoryPressureTest {
 
     /// Apply memory pressure by allocating memory
     pub fn apply_pressure(&mut self, num_allocations: usize) {
-        let allocations_to_make = num_allocations.min(
-            self.max_allocations.saturating_sub(self.allocations.len())
-        );
+        let allocations_to_make =
+            num_allocations.min(self.max_allocations.saturating_sub(self.allocations.len()));
 
         for _ in 0..allocations_to_make {
             let allocation = vec![0u8; self.allocation_size];
@@ -202,7 +195,7 @@ impl MemoryPressureTest {
         }
 
         self.tracker.record_measurement();
-        
+
         println!(
             "Applied memory pressure: {} allocations of {} bytes each (total: {} MB)",
             allocations_to_make,
@@ -224,7 +217,7 @@ impl MemoryPressureTest {
         }
 
         self.tracker.record_measurement();
-        
+
         println!(
             "Released memory pressure: {} deallocations (remaining: {} allocations)",
             deallocations_to_make,
@@ -245,7 +238,7 @@ impl MemoryPressureTest {
     /// Run a memory pressure test scenario
     pub async fn run_pressure_scenario(&mut self) -> MemoryPressureResults {
         println!("Starting memory pressure test scenario");
-        
+
         let start_time = Instant::now();
         let mut phase_results = Vec::new();
 
@@ -255,7 +248,10 @@ impl MemoryPressureTest {
             self.apply_pressure(10 * step);
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
-        phase_results.push(("Pressure Increase".to_string(), self.tracker.current_usage()));
+        phase_results.push((
+            "Pressure Increase".to_string(),
+            self.tracker.current_usage(),
+        ));
 
         // Phase 2: Sustained pressure
         println!("Phase 2: Sustained pressure");
@@ -263,7 +259,10 @@ impl MemoryPressureTest {
             tokio::time::sleep(Duration::from_millis(500)).await;
             self.tracker.record_measurement();
         }
-        phase_results.push(("Sustained Pressure".to_string(), self.tracker.current_usage()));
+        phase_results.push((
+            "Sustained Pressure".to_string(),
+            self.tracker.current_usage(),
+        ));
 
         // Phase 3: Pressure spike
         println!("Phase 3: Pressure spike");
@@ -342,7 +341,11 @@ impl MemoryPressureResults {
             self.final_memory as f64 / 1_048_576.0,
             self.max_overhead() as f64 / 1_048_576.0,
             self.final_overhead() as f64 / 1_048_576.0,
-            if self.memory_properly_released(10.0) { "✓" } else { "✗" }
+            if self.memory_properly_released(10.0) {
+                "✓"
+            } else {
+                "✗"
+            }
         );
 
         report.push_str("Phase Results:\n");
@@ -354,7 +357,10 @@ impl MemoryPressureResults {
             ));
         }
 
-        report.push_str(&format!("\nTotal Measurements: {}\n", self.measurements.len()));
+        report.push_str(&format!(
+            "\nTotal Measurements: {}\n",
+            self.measurements.len()
+        ));
 
         report
     }
@@ -368,38 +374,48 @@ mod tests {
     fn test_memory_tracker_basic() {
         let mut tracker = MemoryUsageTracker::new();
         let baseline = tracker.baseline();
-        
+
         assert!(baseline > 0, "Baseline memory should be positive");
-        assert_eq!(tracker.current_overhead(), 0, "Initial overhead should be zero");
-        
+        assert_eq!(
+            tracker.current_overhead(),
+            0,
+            "Initial overhead should be zero"
+        );
+
         // Simulate some allocations
         tracker.simulate_allocation(1000);
         tracker.record_measurement();
-        
-        assert!(tracker.current_overhead() >= 1000, "Should track allocation");
-        
+
+        assert!(
+            tracker.current_overhead() >= 1000,
+            "Should track allocation"
+        );
+
         tracker.simulate_deallocation(500);
         tracker.record_measurement();
-        
-        assert!(tracker.current_overhead() >= 500, "Should track partial deallocation");
+
+        assert!(
+            tracker.current_overhead() >= 500,
+            "Should track partial deallocation"
+        );
     }
 
     #[tokio::test]
     async fn test_memory_pressure_test() {
         let mut pressure_test = MemoryPressureTest::new(1024, 100);
-        
+
         pressure_test.apply_pressure(10);
         assert!(pressure_test.tracker().current_overhead() >= 10 * 1024);
-        
+
         pressure_test.release_pressure(5);
         let overhead_after_release = pressure_test.tracker().current_overhead();
         assert!(overhead_after_release < 10 * 1024);
-        
+
         // Run full scenario
         let results = pressure_test.run_pressure_scenario().await;
         assert!(results.duration > Duration::from_secs(10));
         assert!(results.peak_memory > results.baseline_memory);
-        
+
         println!("{}", results.generate_report());
     }
 }

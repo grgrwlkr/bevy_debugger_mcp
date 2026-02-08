@@ -43,7 +43,7 @@ impl Checkpoint {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
+            .as_millis() as u64;
 
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -70,8 +70,8 @@ impl Checkpoint {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
-        self.expires_at = Some(now + seconds_from_now);
+            .as_millis() as u64;
+        self.expires_at = Some(now + seconds_from_now.saturating_mul(1000));
         self
     }
 
@@ -87,7 +87,7 @@ impl Checkpoint {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs();
+                .as_millis() as u64;
             now > expires_at
         } else {
             false
@@ -99,8 +99,8 @@ impl Checkpoint {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
-        now.saturating_sub(self.timestamp)
+            .as_millis() as u64;
+        now.saturating_sub(self.timestamp) / 1000
     }
 }
 
@@ -145,7 +145,7 @@ pub struct CheckpointManager {
 
 impl CheckpointManager {
     /// Helper to handle poisoned RwLock by returning an error instead of panicking
-    fn handle_lock_poison<T>() -> Error {
+    fn handle_lock_poison() -> Error {
         Error::Connection("RwLock was poisoned by a panic in another thread".to_string())
     }
     pub fn new(config: CheckpointConfig) -> Self {
@@ -222,7 +222,7 @@ impl CheckpointManager {
             let mut checkpoints = self
                 .checkpoints
                 .write()
-                .map_err(|_| Self::handle_lock_poison::<()>())?;
+                .map_err(|_| Self::handle_lock_poison())?;
 
             // Remove oldest checkpoints if we're at the limit
             while checkpoints.len() >= self.config.max_checkpoints {
@@ -259,7 +259,7 @@ impl CheckpointManager {
             let checkpoints = self
                 .checkpoints
                 .read()
-                .map_err(|_| Self::handle_lock_poison::<()>())?;
+                .map_err(|_| Self::handle_lock_poison())?;
             checkpoints.get(checkpoint_id).cloned()
         };
 
@@ -283,7 +283,7 @@ impl CheckpointManager {
                             let mut checkpoints = self
                                 .checkpoints
                                 .write()
-                                .map_err(|_| Self::handle_lock_poison::<()>())?;
+                                .map_err(|_| Self::handle_lock_poison())?;
                             checkpoints.insert(checkpoint_id.to_string(), cp.clone());
 
                             info!(
@@ -310,7 +310,7 @@ impl CheckpointManager {
         let checkpoints = self
             .checkpoints
             .read()
-            .map_err(|_| Self::handle_lock_poison::<()>())?;
+            .map_err(|_| Self::handle_lock_poison())?;
         Ok(checkpoints.values().cloned().collect())
     }
 
@@ -325,7 +325,7 @@ impl CheckpointManager {
         let checkpoints = self
             .checkpoints
             .read()
-            .map_err(|_| Self::handle_lock_poison::<()>())?;
+            .map_err(|_| Self::handle_lock_poison())?;
         Ok(checkpoints
             .values()
             .filter(|cp| cp.operation_type == operation_type)
@@ -341,7 +341,7 @@ impl CheckpointManager {
         let checkpoints = self
             .checkpoints
             .read()
-            .map_err(|_| Self::handle_lock_poison::<()>())?;
+            .map_err(|_| Self::handle_lock_poison())?;
         Ok(checkpoints
             .values()
             .filter(|cp| cp.component == component)
@@ -356,7 +356,7 @@ impl CheckpointManager {
             let mut checkpoints = self
                 .checkpoints
                 .write()
-                .map_err(|_| Self::handle_lock_poison::<()>())?;
+                .map_err(|_| Self::handle_lock_poison())?;
             checkpoints.remove(checkpoint_id).is_some()
         };
 
@@ -386,7 +386,7 @@ impl CheckpointManager {
         let checkpoints = self
             .checkpoints
             .read()
-            .map_err(|_| Self::handle_lock_poison::<()>())?;
+            .map_err(|_| Self::handle_lock_poison())?;
 
         let mut stats = CheckpointStats {
             total_count: checkpoints.len(),
@@ -510,7 +510,7 @@ impl CheckpointManager {
                                 let mut checkpoints = self
                                     .checkpoints
                                     .write()
-                                    .map_err(|_| Self::handle_lock_poison::<()>())?;
+                                    .map_err(|_| Self::handle_lock_poison())?;
                                 checkpoints.insert(checkpoint.id.clone(), checkpoint);
                                 loaded_count += 1;
                             } else {
@@ -556,16 +556,19 @@ impl CheckpointManager {
 
         // Save all checkpoints to disk if configured
         if self.config.persist_to_disk {
-            match self.checkpoints.read() {
-                Ok(checkpoints) => {
-                    for checkpoint in checkpoints.values() {
-                        if let Err(e) = self.save_checkpoint_to_disk(checkpoint).await {
-                            error!("Failed to save checkpoint during shutdown: {}", e);
-                        }
-                    }
-                }
+            let checkpoints = match self.checkpoints.read() {
+                Ok(checkpoints) => checkpoints.values().cloned().collect::<Vec<_>>(),
                 Err(_) => {
-                    error!("Failed to acquire lock during shutdown - some checkpoints may not be saved");
+                    error!(
+                        "Failed to acquire lock during shutdown - some checkpoints may not be saved"
+                    );
+                    Vec::new()
+                }
+            };
+
+            for checkpoint in checkpoints {
+                if let Err(e) = self.save_checkpoint_to_disk(&checkpoint).await {
+                    error!("Failed to save checkpoint during shutdown: {}", e);
                 }
             }
         }

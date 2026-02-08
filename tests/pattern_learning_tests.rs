@@ -5,11 +5,9 @@
 
 use bevy_debugger_mcp::brp_messages::DebugCommand;
 use bevy_debugger_mcp::pattern_learning::{
-    AnonymizedCommand, DebugPattern, PatternLearningSystem, PatternMiner, TimeBucket,
+    AnonymizedCommand, PatternLearningSystem, PatternMiner, TimeBucket,
 };
-use bevy_debugger_mcp::suggestion_engine::{
-    DebugSuggestion, SuggestionContext, SuggestionEngine, SystemState,
-};
+use bevy_debugger_mcp::suggestion_engine::{SuggestionContext, SuggestionEngine, SystemState};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -161,7 +159,9 @@ async fn test_pattern_matching() {
             .record_command(
                 &session_id,
                 DebugCommand::InspectEntity {
-                    entity_id: i as u32,
+                    entity_id: i as u64,
+                    include_metadata: None,
+                    include_relationships: None,
                 },
                 Duration::from_millis(15),
             )
@@ -172,7 +172,8 @@ async fn test_pattern_matching() {
                 &session_id,
                 DebugCommand::ProfileSystem {
                     system_name: "test".to_string(),
-                    duration_seconds: Some(1),
+                    duration_ms: Some(1000),
+                    track_allocations: None,
                 },
                 Duration::from_millis(100),
             )
@@ -188,7 +189,7 @@ async fn test_pattern_matching() {
         time_bucket: TimeBucket::Fast,
     }];
 
-    let matches = system.find_matching_patterns(&test_sequence).await;
+    let _matches = system.find_matching_patterns(&test_sequence).await;
     // Patterns may or may not be found depending on k-anonymity buffer
 }
 
@@ -321,7 +322,11 @@ async fn test_privacy_preservation() {
     system
         .record_command(
             session_id,
-            DebugCommand::InspectEntity { entity_id: 12345 },
+            DebugCommand::InspectEntity {
+                entity_id: 12345,
+                include_metadata: None,
+                include_relationships: None,
+            },
             Duration::from_millis(10),
         )
         .await;
@@ -331,7 +336,8 @@ async fn test_privacy_preservation() {
             session_id,
             DebugCommand::ProfileSystem {
                 system_name: "super_secret_system".to_string(),
-                duration_seconds: Some(5),
+                duration_ms: Some(5000),
+                track_allocations: None,
             },
             Duration::from_millis(50),
         )
@@ -384,7 +390,7 @@ async fn test_sequence_length_limits() {
     system.start_session(session_id.to_string()).await;
 
     // Record more commands than MAX_SEQUENCE_LENGTH
-    for i in 0..20 {
+    for _i in 0..20 {
         system
             .record_command(
                 session_id,

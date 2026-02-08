@@ -8,8 +8,8 @@
  * (at your option) any later version.
  */
 
-use crate::brp_messages::{BrpErrorCode, BrpRequest, ComponentTypeId, EntityId};
-use crate::error::{Error, ErrorContext, ErrorSeverity, Result};
+use crate::brp_messages::{BrpRequest, ComponentTypeId, EntityId};
+use crate::error::{Error, ErrorContext, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -231,7 +231,7 @@ impl ComponentRegistry {
     }
 
     /// Check if component type is registered
-    pub fn is_registered(&self, type_id: &ComponentTypeId) -> bool {
+    pub fn is_registered(&self, type_id: &str) -> bool {
         self.registered_types.contains(type_id)
     }
 
@@ -242,7 +242,7 @@ impl ComponentRegistry {
     }
 
     /// Get component metadata
-    pub fn get_metadata(&self, type_id: &ComponentTypeId) -> Option<&ComponentTypeMetadata> {
+    pub fn get_metadata(&self, type_id: &str) -> Option<&ComponentTypeMetadata> {
         self.type_metadata.get(type_id)
     }
 }
@@ -371,7 +371,7 @@ impl BrpValidator {
     async fn validate_request_size(
         &self,
         request_size: usize,
-        context: &ErrorContext,
+        _context: &ErrorContext,
     ) -> Result<()> {
         if request_size > self.config.max_request_size {
             return Err(Error::Validation(format!(
@@ -383,7 +383,7 @@ impl BrpValidator {
     }
 
     /// Validate rate limiting
-    async fn validate_rate_limit(&self, session_id: &str, context: &ErrorContext) -> Result<()> {
+    async fn validate_rate_limit(&self, session_id: &str, _context: &ErrorContext) -> Result<()> {
         let mut sessions = self.user_sessions.write().await;
         let session = sessions.entry(session_id.to_string()).or_insert_with(|| {
             UserSession {
@@ -428,7 +428,7 @@ impl BrpValidator {
         &self,
         request: &BrpRequest,
         session_id: &str,
-        context: &ErrorContext,
+        _context: &ErrorContext,
     ) -> Result<()> {
         if !self.config.enforce_permissions {
             return Ok(());
@@ -478,19 +478,20 @@ impl BrpValidator {
     async fn validate_request_specifics(
         &self,
         request: &BrpRequest,
-        context: &ErrorContext,
+        _context: &ErrorContext,
     ) -> Result<()> {
         match request {
-            BrpRequest::Query { limit, .. } => {
-                if let Some(limit) = limit {
-                    if *limit > self.config.max_entities_per_query {
-                        return Err(Error::Validation(format!(
-                            "Query limit {} exceeds maximum {}. Use pagination with smaller limits.",
-                            limit, self.config.max_entities_per_query
-                        )));
-                    }
+            BrpRequest::Query {
+                limit: Some(limit), ..
+            } => {
+                if *limit > self.config.max_entities_per_query {
+                    return Err(Error::Validation(format!(
+                        "Query limit {} exceeds maximum {}. Use pagination with smaller limits.",
+                        limit, self.config.max_entities_per_query
+                    )));
                 }
             }
+            BrpRequest::Query { .. } => {}
 
             BrpRequest::Set { components, .. } => {
                 // Validate component values size
@@ -550,7 +551,7 @@ impl BrpValidator {
     async fn validate_entity_existence(
         &self,
         request: &BrpRequest,
-        context: &ErrorContext,
+        _context: &ErrorContext,
     ) -> Result<()> {
         let entity_tracker = self.entity_tracker.read().await;
 
@@ -586,7 +587,7 @@ impl BrpValidator {
     async fn validate_component_types(
         &self,
         request: &BrpRequest,
-        context: &ErrorContext,
+        _context: &ErrorContext,
     ) -> Result<()> {
         let component_registry = self.component_registry.read().await;
 
@@ -676,8 +677,7 @@ impl Default for BrpValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::brp_messages::{BrpRequest, QueryFilter};
-    use std::collections::HashMap;
+    use crate::brp_messages::BrpRequest;
 
     #[tokio::test]
     async fn test_basic_validation() {
@@ -709,8 +709,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limiting() {
-        let mut config = ValidationConfig::default();
-        config.rate_limit = 2; // Very low limit for testing
+        let config = ValidationConfig {
+            rate_limit: 2, // Very low limit for testing
+            ..Default::default()
+        };
         let validator = BrpValidator::with_config(config);
         let request = BrpRequest::ListComponents;
 

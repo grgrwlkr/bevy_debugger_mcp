@@ -12,7 +12,7 @@ use tokio::time::timeout;
 mod integration;
 mod mocks;
 
-use integration::{IntegrationTestHarness, TestConfig};
+use integration::harness::{IntegrationTestHarness, TestConfig};
 use mocks::MockMcpClient;
 
 /// Test that all MCP commands are integrated and working
@@ -205,6 +205,7 @@ async fn test_mcp_protocol_compliance() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..bevy_debugger_mcp::config::Config::default()
     };
 
     let mock_client = MockMcpClient::new(config).await.unwrap();
@@ -273,7 +274,9 @@ async fn test_acceptance_criteria_validation() {
     );
 
     // Check acceptance criteria
-    let criteria = harness.meets_acceptance_criteria().await;
+    let criteria = harness
+        .meets_acceptance_criteria_with_coverage(&coverage)
+        .await;
 
     println!("Acceptance Criteria Results:");
     println!(
@@ -386,9 +389,10 @@ async fn test_concurrent_command_execution() {
     // Wait for all commands to complete
     let mut successful = 0;
     for handle in handles {
-        match handle.await.unwrap() {
-            Ok(_) => successful += 1,
-            Err(_) => {} // Some may fail due to mock limitations
+        if handle.await.unwrap().is_ok() {
+            successful += 1;
+        } else {
+            // Some may fail due to mock limitations
         }
     }
 

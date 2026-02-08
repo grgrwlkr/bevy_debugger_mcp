@@ -1,14 +1,11 @@
 use bevy_debugger_mcp::brp_client::BrpClient;
 /// Integration tests for system profiler functionality
-use bevy_debugger_mcp::brp_messages::{
-    DebugCommand, DebugResponse, ProfileSample, SystemMetrics, SystemProfile,
-};
+use bevy_debugger_mcp::brp_messages::{DebugCommand, DebugResponse};
 use bevy_debugger_mcp::config::Config;
 use bevy_debugger_mcp::debug_command_processor::DebugCommandProcessor;
-use bevy_debugger_mcp::error::{Error, Result};
+use bevy_debugger_mcp::error::Error;
 use bevy_debugger_mcp::system_profiler::{
-    ExportFormat, PerformanceAnomaly, ProfilerConfig, SystemProfiler, DEFAULT_PROFILE_DURATION_MS,
-    MAX_CONCURRENT_SYSTEMS, MAX_FRAME_HISTORY,
+    ExportFormat, ProfilerConfig, SystemProfiler, MAX_CONCURRENT_SYSTEMS, MAX_FRAME_HISTORY,
 };
 use bevy_debugger_mcp::system_profiler_processor::{
     ExtendedProfilerProcessor, SystemProfilerProcessor,
@@ -24,6 +21,7 @@ async fn create_test_profiler() -> Arc<SystemProfiler> {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3000,
+        ..Config::default()
     };
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     Arc::new(SystemProfiler::new(brp_client))
@@ -35,6 +33,7 @@ async fn test_profiler_configuration() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3000,
+        ..Config::default()
     };
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
 
@@ -45,7 +44,7 @@ async fn test_profiler_configuration() {
         auto_profile_threshold_ms: 20.0,
     };
 
-    let profiler = SystemProfiler::with_config(brp_client, profiler_config.clone());
+    let _profiler = SystemProfiler::with_config(brp_client, profiler_config.clone());
 
     // Configuration is internal, but we can test behavior
     assert_eq!(MAX_FRAME_HISTORY, 1000);

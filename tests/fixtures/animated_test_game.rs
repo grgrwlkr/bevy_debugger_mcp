@@ -1,8 +1,10 @@
+#![allow(dead_code)]
+
 use bevy::{
-    prelude::*,
-    remote::{RemotePlugin, BrpResult},
-    render::view::screenshot::{save_to_disk, Screenshot},
     app::AppExit,
+    prelude::*,
+    remote::{BrpResult, RemotePlugin},
+    render::view::screenshot::{save_to_disk, Screenshot},
     window::WindowPlugin,
 };
 use serde_json::Value;
@@ -22,16 +24,13 @@ pub fn run_animated_test_game() {
             ..default()
         }))
         .add_plugins(
-            RemotePlugin::default()
-                .with_method("bevy_debugger/screenshot", screenshot_handler)
+            RemotePlugin::default().with_method("bevy_debugger/screenshot", screenshot_handler),
         )
         .add_systems(Startup, setup_animated_scene)
-        .add_systems(Update, (
-            rotate_cubes,
-            orbit_sphere,
-            pulse_light,
-            auto_exit_system,
-        ))
+        .add_systems(
+            Update,
+            (rotate_cubes, orbit_sphere, pulse_light, auto_exit_system),
+        )
         .run();
 }
 
@@ -140,10 +139,7 @@ struct PulsingLight {
 }
 
 /// System to rotate objects
-fn rotate_cubes(
-    time: Res<Time>,
-    mut query: Query<(&mut Transform, &RotatingObject)>,
-) {
+fn rotate_cubes(time: Res<Time>, mut query: Query<(&mut Transform, &RotatingObject)>) {
     for (mut transform, rotating) in &mut query {
         transform.rotate_y(time.delta_secs() * rotating.speed);
         transform.rotate_x(time.delta_secs() * rotating.speed * 0.7);
@@ -151,10 +147,7 @@ fn rotate_cubes(
 }
 
 /// System to orbit objects
-fn orbit_sphere(
-    time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut OrbitingObject)>,
-) {
+fn orbit_sphere(time: Res<Time>, mut query: Query<(&mut Transform, &mut OrbitingObject)>) {
     for (mut transform, mut orbiting) in &mut query {
         orbiting.angle += time.delta_secs() * orbiting.speed;
         let x = orbiting.radius * orbiting.angle.cos();
@@ -164,10 +157,7 @@ fn orbit_sphere(
 }
 
 /// System to pulse light intensity
-fn pulse_light(
-    time: Res<Time>,
-    mut query: Query<(&mut PointLight, &PulsingLight)>,
-) {
+fn pulse_light(time: Res<Time>, mut query: Query<(&mut PointLight, &PulsingLight)>) {
     for (mut light, pulsing) in &mut query {
         let pulse = (time.elapsed_secs() * pulsing.pulse_speed).sin();
         light.intensity = pulsing.base_intensity * (1.0 + pulse * 0.3);
@@ -195,7 +185,7 @@ fn auto_exit_system(
 
 /// Screenshot handler with enhanced timing support for animated scenes
 fn screenshot_handler(
-    In(params): In<Option<Value>>, 
+    In(params): In<Option<Value>>,
     mut commands: Commands,
     time: Res<Time>,
 ) -> BrpResult {
@@ -215,7 +205,7 @@ fn screenshot_handler(
     // Log timing information for animated captures
     let elapsed_time = time.elapsed_secs();
     info!(
-        "Animated screenshot handler called at T+{:.2}s: {} -> {}", 
+        "Animated screenshot handler called at T+{:.2}s: {} -> {}",
         elapsed_time, description, path
     );
 
@@ -223,7 +213,7 @@ fn screenshot_handler(
     commands
         .spawn(Screenshot::primary_window())
         .observe(save_to_disk(path.clone()));
-    
+
     Ok(serde_json::json!({
         "path": path,
         "success": true,

@@ -7,12 +7,10 @@ use crate::brp_messages::{DebugCommand, DebugResponse};
 use crate::debug_command_processor::DebugCommandProcessor;
 use crate::error::{Error, Result};
 use crate::performance_budget::{
-    BudgetConfig, BudgetRecommendation, BudgetViolation, ComplianceReport,
-    PerformanceBudgetMonitor, PerformanceMetrics, Platform,
+    BudgetConfig, BudgetViolation, PerformanceBudgetMonitor, PerformanceMetrics,
 };
 use async_trait::async_trait;
 use chrono::Utc;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -143,7 +141,7 @@ impl PerformanceBudgetProcessor {
     }
 
     /// Collect current performance metrics
-    async fn collect_metrics(brp_client: &Arc<RwLock<BrpClient>>) -> Result<PerformanceMetrics> {
+    async fn collect_metrics(_brp_client: &Arc<RwLock<BrpClient>>) -> Result<PerformanceMetrics> {
         // In a real implementation, this would query actual metrics from Bevy
         // For now, we'll simulate metrics collection
 
@@ -211,8 +209,9 @@ impl PerformanceBudgetProcessor {
     }
 
     /// Load configuration from file
+    #[allow(dead_code)]
     async fn load_config(&self) -> Result<BudgetConfig> {
-        if let Some(ref path) = self.config_path {
+        if let Some(ref _path) = self.config_path {
             // In a real implementation, this would load from TOML file
             // For now, return default config
             Ok(BudgetConfig::default())
@@ -222,7 +221,7 @@ impl PerformanceBudgetProcessor {
     }
 
     /// Save configuration to file
-    async fn save_config(&self, config: &BudgetConfig) -> Result<()> {
+    async fn save_config(&self, _config: &BudgetConfig) -> Result<()> {
         if let Some(ref path) = self.config_path {
             // In a real implementation, this would save to TOML file
             info!("Configuration saved to {}", path);
@@ -477,10 +476,12 @@ mod tests {
     use super::*;
 
     async fn create_test_processor() -> PerformanceBudgetProcessor {
-        let mut config = crate::config::Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
+        let config = crate::config::Config {
+            bevy_brp_host: "localhost".to_string(),
+            bevy_brp_port: 15702,
+            mcp_port: 3000,
+            ..Default::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         PerformanceBudgetProcessor::new(brp_client)
     }
@@ -528,8 +529,12 @@ mod tests {
             "frame_time_ms": 20.0,
             "memory_mb": 600.0,
             "cpu_percent": 75.0,
+            "system_budgets": {},
+            "platform_overrides": {},
             "auto_adjust": true,
-            "violation_threshold": 5
+            "auto_adjust_percentile": 95.0,
+            "violation_threshold": 5,
+            "violation_window_seconds": 10
         });
 
         let result = processor

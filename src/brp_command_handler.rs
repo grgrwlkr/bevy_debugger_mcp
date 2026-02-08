@@ -17,7 +17,6 @@
  */
 
 use async_trait::async_trait;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -101,7 +100,7 @@ pub trait BrpCommandHandler: Send + Sync {
     async fn validate(&self, request: &BrpRequest) -> Result<()> {
         // Use basic validation from brp_messages module as fallback
         crate::brp_messages::validation::validate_request(request)
-            .map_err(|e| crate::error::Error::Validation(e))
+            .map_err(crate::error::Error::Validation)
     }
 
     /// Get the handler's priority (higher = processed first).
@@ -117,6 +116,12 @@ pub struct CommandHandlerRegistry {
     handlers: Arc<RwLock<Vec<Arc<dyn BrpCommandHandler>>>>,
     version_map: Arc<RwLock<HashMap<String, CommandVersion>>>,
     validator: Arc<BrpValidator>,
+}
+
+impl Default for CommandHandlerRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CommandHandlerRegistry {
@@ -143,6 +148,9 @@ impl CommandHandlerRegistry {
 
         // Update version map
         let mut version_map = self.version_map.write().await;
+        if version_map.contains_key(&metadata.name) {
+            return;
+        }
         version_map.insert(metadata.name.clone(), metadata.version.clone());
 
         // Add handler sorted by priority
@@ -178,7 +186,7 @@ impl CommandHandlerRegistry {
         if let Some(handler) = self.find_handler(&request).await {
             // First run comprehensive validation
             let request_size = serde_json::to_vec(&request)
-                .map_err(|e| crate::error::Error::Json(e))?
+                .map_err(crate::error::Error::Json)?
                 .len();
 
             self.validator
@@ -236,8 +244,10 @@ impl BrpCommandHandler for CoreBrpHandler {
                 "Set".to_string(),
                 "ListEntities".to_string(),
                 "ListComponents".to_string(),
+                "Spawn".to_string(),
+                "Destroy".to_string(),
                 "SpawnEntity".to_string(),
-                "DestroyEntity".to_string(),
+                "DeleteEntity".to_string(),
             ],
         }
     }
@@ -249,13 +259,15 @@ impl BrpCommandHandler for CoreBrpHandler {
                 | BrpRequest::Get { .. }
                 | BrpRequest::Set { .. }
                 | BrpRequest::ListEntities { .. }
-                | BrpRequest::ListComponents { .. }
+                | BrpRequest::ListComponents
                 | BrpRequest::Spawn { .. }
                 | BrpRequest::Destroy { .. }
+                | BrpRequest::SpawnEntity { .. }
+                | BrpRequest::DeleteEntity { .. }
         )
     }
 
-    async fn handle(&self, request: BrpRequest) -> Result<BrpResponse> {
+    async fn handle(&self, _request: BrpRequest) -> Result<BrpResponse> {
         // This will be handled by the actual BRP WebSocket connection
         // For now, return a placeholder
         Ok(BrpResponse::Success(Box::new(

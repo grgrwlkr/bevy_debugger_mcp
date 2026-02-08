@@ -1,8 +1,9 @@
+#![allow(dead_code)]
 use bevy::{
-    prelude::*,
-    remote::{RemotePlugin, BrpResult},
-    render::view::screenshot::{save_to_disk, Screenshot},
     app::AppExit,
+    prelude::*,
+    remote::{BrpResult, RemotePlugin},
+    render::view::screenshot::{save_to_disk, Screenshot},
     window::WindowPlugin,
 };
 use serde_json::Value;
@@ -22,8 +23,7 @@ pub fn run_static_test_game() {
             ..default()
         }))
         .add_plugins(
-            RemotePlugin::default()
-                .with_method("bevy_debugger/screenshot", screenshot_handler)
+            RemotePlugin::default().with_method("bevy_debugger/screenshot", screenshot_handler),
         )
         .add_systems(Startup, setup_static_scene)
         .add_systems(Update, (auto_exit_system, handle_screenshot_requests))
@@ -67,7 +67,7 @@ fn setup_static_scene(
         TestMarker,
     ));
 
-    // Blue cylinder - tertiary test object  
+    // Blue cylinder - tertiary test object
     commands.spawn((
         Mesh3d(meshes.add(Cylinder::new(0.6, 2.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
@@ -135,10 +135,7 @@ fn handle_screenshot_requests() {
 }
 
 /// Enhanced screenshot handler with timing controls
-fn screenshot_handler(
-    In(params): In<Option<Value>>, 
-    mut commands: Commands,
-) -> BrpResult {
+fn screenshot_handler(In(params): In<Option<Value>>, mut commands: Commands) -> BrpResult {
     let path = params
         .as_ref()
         .and_then(|p| p.get("path"))
@@ -170,7 +167,7 @@ fn screenshot_handler(
     commands
         .spawn(Screenshot::primary_window())
         .observe(save_to_disk(path.clone()));
-    
+
     Ok(serde_json::json!({
         "path": path,
         "success": true,

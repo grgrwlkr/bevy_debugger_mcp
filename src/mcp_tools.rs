@@ -32,7 +32,7 @@ use crate::brp_client::BrpClient;
 use crate::tools::{anomaly, experiment, hypothesis, observe, replay, stress};
 
 // Parameter structures for tools
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ObserveRequest {
     pub query: String,
     #[serde(default)]
@@ -43,7 +43,7 @@ pub struct ObserveRequest {
     pub reflection: bool,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ExperimentRequest {
     #[serde(rename = "type")]
     pub experiment_type: String,
@@ -52,7 +52,7 @@ pub struct ExperimentRequest {
     pub duration: Option<f32>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct HypothesisRequest {
     pub hypothesis: String,
     #[serde(default = "default_confidence")]
@@ -60,7 +60,7 @@ pub struct HypothesisRequest {
     pub context: Option<Value>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct AnomalyRequest {
     #[serde(rename = "type")]
     pub detection_type: String,
@@ -69,7 +69,7 @@ pub struct AnomalyRequest {
     pub window: Option<f32>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct StressTestRequest {
     #[serde(rename = "type")]
     pub test_type: String,
@@ -81,7 +81,7 @@ pub struct StressTestRequest {
     pub detailed_metrics: bool,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ReplayRequest {
     pub action: String,
     pub checkpoint_id: Option<String>,

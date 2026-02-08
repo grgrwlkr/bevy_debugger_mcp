@@ -75,6 +75,7 @@ struct ProfileSession {
     /// Collected samples
     samples: Vec<ProfileSample>,
     /// Whether to track allocations
+    #[allow(dead_code)]
     track_allocations: bool,
 }
 
@@ -112,6 +113,7 @@ struct SystemDependencyGraph {
     /// Reverse dependencies: system -> systems that depend on it
     dependents: HashMap<String, Vec<String>>,
     /// Execution order
+    #[allow(dead_code)]
     execution_order: Vec<String>,
 }
 
@@ -697,8 +699,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_profiler_creation() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = SystemProfiler::new(brp_client);
 
@@ -707,8 +711,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_stop_profiling() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = SystemProfiler::new(brp_client);
 
@@ -731,8 +737,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_metrics_calculation() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = SystemProfiler::new(brp_client);
 

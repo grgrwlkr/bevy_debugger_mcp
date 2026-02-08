@@ -18,12 +18,12 @@
 
 use crate::config::HeartbeatConfig;
 use futures_util::{SinkExt, StreamExt};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::Mutex;
 use tokio::time::{interval, timeout};
-use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
+use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -272,44 +272,43 @@ where
                 match message_result {
                     Ok(Some(Ok(Message::Text(text)))) => {
                         // Try to parse as heartbeat pong
-                        if let Ok(pong) = Self::parse_heartbeat_message(&text) {
-                            if let HeartbeatMessage::Pong { id, timestamp: _ } = pong {
-                                // Check if we have a pending ping for this ID
-                                let rtt = {
-                                    let mut pending = pending_pings.lock().await;
-                                    pending.remove(&id).map(|sent_at| sent_at.elapsed())
-                                };
+                        if let Ok(HeartbeatMessage::Pong { id, timestamp: _ }) =
+                            Self::parse_heartbeat_message(&text)
+                        {
+                            // Check if we have a pending ping for this ID
+                            let rtt = {
+                                let mut pending = pending_pings.lock().await;
+                                pending.remove(&id).map(|sent_at| sent_at.elapsed())
+                            };
 
-                                if let Some(round_trip_time) = rtt {
-                                    let mut stats_guard = stats.lock().await;
-                                    stats_guard.total_pongs_received += 1;
-                                    stats_guard.consecutive_failures = 0;
-                                    stats_guard.last_successful_heartbeat = Some(SystemTime::now());
+                            if let Some(round_trip_time) = rtt {
+                                let mut stats_guard = stats.lock().await;
+                                stats_guard.total_pongs_received += 1;
+                                stats_guard.consecutive_failures = 0;
+                                stats_guard.last_successful_heartbeat = Some(SystemTime::now());
 
-                                    // Update RTT statistics
-                                    if round_trip_time > stats_guard.max_round_trip_time {
-                                        stats_guard.max_round_trip_time = round_trip_time;
-                                    }
+                                // Update RTT statistics
+                                if round_trip_time > stats_guard.max_round_trip_time {
+                                    stats_guard.max_round_trip_time = round_trip_time;
+                                }
 
-                                    // Calculate moving average RTT
-                                    let total_responses = stats_guard.total_pongs_received;
-                                    if total_responses == 1 {
-                                        stats_guard.avg_round_trip_time = round_trip_time;
-                                    } else {
-                                        let current_avg = stats_guard.avg_round_trip_time;
-                                        stats_guard.avg_round_trip_time = Duration::from_nanos(
-                                            ((current_avg.as_nanos() as u64
-                                                * (total_responses - 1))
-                                                + round_trip_time.as_nanos() as u64)
-                                                / total_responses,
-                                        );
-                                    }
-
-                                    debug!(
-                                        "Heartbeat pong received: {} (RTT: {:?})",
-                                        id, round_trip_time
+                                // Calculate moving average RTT
+                                let total_responses = stats_guard.total_pongs_received;
+                                if total_responses == 1 {
+                                    stats_guard.avg_round_trip_time = round_trip_time;
+                                } else {
+                                    let current_avg = stats_guard.avg_round_trip_time;
+                                    stats_guard.avg_round_trip_time = Duration::from_nanos(
+                                        ((current_avg.as_nanos() as u64 * (total_responses - 1))
+                                            + round_trip_time.as_nanos() as u64)
+                                            / total_responses,
                                     );
                                 }
+
+                                debug!(
+                                    "Heartbeat pong received: {} (RTT: {:?})",
+                                    id, round_trip_time
+                                );
                             }
                         }
                     }
@@ -416,7 +415,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_util::{stream, Sink, Stream};
+    use futures_util::{Sink, Stream};
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
@@ -480,9 +479,11 @@ mod tests {
 
     #[test]
     fn test_heartbeat_stats() {
-        let mut stats = HeartbeatStats::default();
-        stats.total_pings_sent = 10;
-        stats.total_pongs_received = 8;
+        let mut stats = HeartbeatStats {
+            total_pings_sent: 10,
+            total_pongs_received: 8,
+            ..Default::default()
+        };
 
         assert_eq!(stats.success_rate(), 80.0);
 

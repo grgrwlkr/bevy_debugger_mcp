@@ -28,7 +28,7 @@ use bevy_debugger_mcp::{
     brp_messages::{BrpRequest, QueryFilter},
     config::Config,
     parallel_query_executor::{ParallelExecutionConfig, ParallelQueryExecutor},
-    query_optimization::{QueryOptimizer, QueryPerformanceMetrics},
+    query_optimization::QueryOptimizer,
     tools::{observe, observe_optimized},
 };
 
@@ -42,6 +42,14 @@ impl BenchConfig {
             runtime: Runtime::new().unwrap(),
         }
     }
+}
+
+#[allow(clippy::field_reassign_with_default)]
+fn build_filter(with: Option<Vec<String>>, without: Option<Vec<String>>) -> QueryFilter {
+    let mut filter = QueryFilter::default();
+    filter.with = with;
+    filter.without = without;
+    filter
 }
 
 /// Benchmark query optimization performance (BEVDBG-014)
@@ -61,39 +69,36 @@ fn benchmark_query_optimization(c: &mut Criterion) {
         (
             "single_component_filter",
             BrpRequest::Query {
-                filter: Some(QueryFilter {
-                    with: Some(vec!["Transform".to_string()]),
-                    without: None,
-                    where_clause: None,
-                }),
+                filter: Some(build_filter(Some(vec!["Transform".to_string()]), None)),
                 limit: None,
+                strict: Some(false),
             },
         ),
         (
             "multi_component_filter",
             BrpRequest::Query {
-                filter: Some(QueryFilter {
-                    with: Some(vec!["Transform".to_string(), "Velocity".to_string()]),
-                    without: Some(vec!["Inactive".to_string()]),
-                    where_clause: None,
-                }),
+                filter: Some(build_filter(
+                    Some(vec!["Transform".to_string(), "Velocity".to_string()]),
+                    Some(vec!["Inactive".to_string()]),
+                )),
                 limit: None,
+                strict: Some(false),
             },
         ),
         (
             "complex_query",
             BrpRequest::Query {
-                filter: Some(QueryFilter {
-                    with: Some(vec![
+                filter: Some(build_filter(
+                    Some(vec![
                         "Transform".to_string(),
                         "Velocity".to_string(),
                         "Health".to_string(),
                         "Collider".to_string(),
                     ]),
-                    without: Some(vec!["Inactive".to_string(), "Destroyed".to_string()]),
-                    where_clause: None,
-                }),
+                    Some(vec!["Inactive".to_string(), "Destroyed".to_string()]),
+                )),
                 limit: Some(500),
+                strict: Some(false),
             },
         ),
     ];
@@ -126,7 +131,7 @@ fn benchmark_parallel_scalability(c: &mut Criterion) {
     let bench_config = BenchConfig::new();
 
     // Test different entity counts to measure parallel scaling
-    let entity_counts = vec![100, 500, 1000, 5000, 10000];
+    let entity_counts = vec![100_usize, 500, 1000, 5000, 10000];
 
     for entity_count in entity_counts {
         c.bench_with_input(
@@ -135,7 +140,7 @@ fn benchmark_parallel_scalability(c: &mut Criterion) {
             |b, &entity_count| {
                 b.to_async(&bench_config.runtime).iter(|| async {
                     // Simulate processing entities in batches
-                    let batch_size = 250;
+                    let batch_size = 250_usize;
                     let num_batches = (entity_count + batch_size - 1) / batch_size;
 
                     // Sequential processing
@@ -149,8 +154,8 @@ fn benchmark_parallel_scalability(c: &mut Criterion) {
 
                     // Parallel processing
                     let parallel_start = std::time::Instant::now();
-                    let batch_futures = (0..num_batches).map(|_| async {
-                        tokio::task::spawn_blocking(|| {
+                    let batch_futures = (0..num_batches).map(|_| async move {
+                        tokio::task::spawn_blocking(move || {
                             for _entity in 0..batch_size.min(entity_count) {
                                 let _work = simulate_entity_processing();
                             }
@@ -180,6 +185,7 @@ fn benchmark_observe_performance(c: &mut Criterion) {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
 
@@ -280,12 +286,12 @@ fn benchmark_bevdbg014_acceptance(c: &mut Criterion) {
             let optimizer = QueryOptimizer::new(100, 1000, 500);
 
             let request = BrpRequest::Query {
-                filter: Some(QueryFilter {
-                    with: Some(vec!["Transform".to_string(), "Velocity".to_string()]),
-                    without: None,
-                    where_clause: None,
-                }),
+                filter: Some(build_filter(
+                    Some(vec!["Transform".to_string(), "Velocity".to_string()]),
+                    None,
+                )),
                 limit: None,
+                strict: Some(false),
             };
 
             // First optimization (cache miss)
@@ -323,28 +329,19 @@ fn benchmark_query_cache(c: &mut Criterion) {
             // Create several different query patterns
             let queries = vec![
                 BrpRequest::Query {
-                    filter: Some(QueryFilter {
-                        with: Some(vec!["Transform".to_string()]),
-                        without: None,
-                        where_clause: None,
-                    }),
+                    filter: Some(build_filter(Some(vec!["Transform".to_string()]), None)),
                     limit: None,
+                    strict: Some(false),
                 },
                 BrpRequest::Query {
-                    filter: Some(QueryFilter {
-                        with: Some(vec!["Velocity".to_string()]),
-                        without: None,
-                        where_clause: None,
-                    }),
+                    filter: Some(build_filter(Some(vec!["Velocity".to_string()]), None)),
                     limit: None,
+                    strict: Some(false),
                 },
                 BrpRequest::Query {
-                    filter: Some(QueryFilter {
-                        with: Some(vec!["Health".to_string()]),
-                        without: None,
-                        where_clause: None,
-                    }),
+                    filter: Some(build_filter(Some(vec!["Health".to_string()]), None)),
                     limit: None,
+                    strict: Some(false),
                 },
             ];
 

@@ -9,7 +9,7 @@ mod dependency_audit_tests {
     fn test_no_md5_dependency() {
         // Verify that md5 is not in our dependencies
         let output = Command::new("cargo")
-            .args(&["tree", "-p", "md5"])
+            .args(["tree", "-p", "md5"])
             .output()
             .expect("Failed to execute cargo tree");
 
@@ -26,7 +26,7 @@ mod dependency_audit_tests {
     fn test_sha2_dependency_present() {
         // Verify that sha2 is in our dependencies (as we're using SHA-256 now)
         let output = Command::new("cargo")
-            .args(&["tree", "-p", "sha2"])
+            .args(["tree", "-p", "sha2"])
             .output()
             .expect("Failed to execute cargo tree");
 
@@ -43,7 +43,7 @@ mod dependency_audit_tests {
     fn test_is_terminal_dependency_present() {
         // Verify we're using is-terminal instead of the deprecated atty
         let output = Command::new("cargo")
-            .args(&["tree", "-p", "is-terminal"])
+            .args(["tree", "-p", "is-terminal"])
             .output()
             .expect("Failed to execute cargo tree");
 
@@ -59,7 +59,7 @@ mod dependency_audit_tests {
     fn test_no_atty_dependency() {
         // Verify that deprecated atty is not in our dependencies
         let output = Command::new("cargo")
-            .args(&["tree", "-p", "atty"])
+            .args(["tree", "-p", "atty"])
             .output()
             .expect("Failed to execute cargo tree");
 

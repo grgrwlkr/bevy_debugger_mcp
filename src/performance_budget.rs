@@ -21,9 +21,6 @@ const MAX_COMPLIANCE_SAMPLES: usize = 10000;
 /// Default violation detection latency (100ms as per requirements)
 const VIOLATION_DETECTION_LATENCY_MS: u64 = 100;
 
-/// Platform detection interval
-const PLATFORM_DETECTION_INTERVAL: Duration = Duration::from_secs(60);
-
 /// Performance budget configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BudgetConfig {
@@ -340,6 +337,7 @@ struct PerformanceBudgetMonitorInner {
     monitoring_active: bool,
 
     /// Last detection check
+    #[allow(dead_code)]
     last_detection: Instant,
 
     /// Statistics

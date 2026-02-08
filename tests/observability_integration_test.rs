@@ -455,7 +455,6 @@ mod basic_tests {
         let config = Config::default();
 
         // These should always be available since observability is part of core config
-        assert!(config.observability.metrics_enabled || !config.observability.metrics_enabled);
         assert!(config.observability.metrics_port > 0);
     }
 }

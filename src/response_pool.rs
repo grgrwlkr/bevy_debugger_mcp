@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::debug;
 
 use crate::error::Result;
 use crate::resource_manager::ObjectPool;
@@ -351,6 +351,7 @@ pub struct PooledResponseBuffer {
     pub buffer: ResponseBuffer,
     pool: Arc<ObjectPool<ResponseBuffer>>,
     buffer_type: BufferType,
+    #[allow(dead_code)]
     pool_ref: std::sync::Weak<RwLock<ResponsePoolStats>>,
 }
 

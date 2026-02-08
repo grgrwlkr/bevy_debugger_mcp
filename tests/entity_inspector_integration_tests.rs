@@ -1,20 +1,20 @@
 use bevy_debugger_mcp::brp_client::BrpClient;
 /// Integration tests for entity inspector functionality
 use bevy_debugger_mcp::brp_messages::{
-    BrpError, BrpErrorCode, BrpRequest, BrpResponse, BrpResult, DebugCommand, DebugResponse,
+    BrpError, BrpErrorCode, BrpRequest, BrpResponse, BrpResult, DebugCommand,
     DetailedComponentTypeInfo, EntityData, EntityId, EntityInspectionResult, EntityLocationInfo,
-    EntityMetadata, EntityRelationships,
+    EntityMetadata,
 };
 use bevy_debugger_mcp::config::Config;
 use bevy_debugger_mcp::entity_inspector::{EntityInspector, MAX_BATCH_SIZE};
-use bevy_debugger_mcp::error::{Error, Result};
-use serde_json::{json, Value};
+use bevy_debugger_mcp::error::Result;
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// Mock BRP Client for testing
+#[allow(dead_code)]
 struct MockBrpClient {
     /// Predefined entities for testing
     entities: HashMap<EntityId, EntityData>,
@@ -22,6 +22,7 @@ struct MockBrpClient {
     simulate_failure: bool,
 }
 
+#[allow(dead_code)]
 impl MockBrpClient {
     fn new() -> Self {
         let mut entities = HashMap::new();
@@ -193,15 +194,13 @@ impl MockBrpClient {
 
 /// Create a test entity inspector with mock BRP client
 async fn create_test_inspector() -> EntityInspector {
-    let mock_client = MockBrpClient::new();
-    let brp_client = Arc::new(RwLock::new(mock_client));
-
-    // We need to use a wrapper that implements the actual BrpClient interface
-    // For now, we'll create a test-specific setup
-    let mut config = Config::default();
-    config.bevy_brp_host = "localhost".to_string();
-    config.bevy_brp_port = 15702;
-    config.mcp_port = 3000;
+    // Use a real BrpClient for now since EntityInspector expects it
+    let config = Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Default::default()
+    };
 
     let actual_brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     EntityInspector::new(actual_brp_client)
@@ -209,7 +208,7 @@ async fn create_test_inspector() -> EntityInspector {
 
 #[tokio::test]
 async fn test_single_entity_inspection() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test would need a proper mock - this is a structure test
     // In a real scenario, we'd mock the BRP client properly
@@ -249,7 +248,7 @@ async fn test_batch_inspection_validation() {
 
 #[tokio::test]
 async fn test_component_size_estimation() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test component size estimation method (via reflection)
     // This tests the private method through public interface
@@ -275,7 +274,7 @@ async fn test_component_size_estimation() {
 
 #[tokio::test]
 async fn test_entity_relationship_parsing() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test relationship component detection
     let relationship_components = vec![
@@ -286,7 +285,7 @@ async fn test_entity_relationship_parsing() {
         "other::child::Data",
     ];
 
-    for component_type in relationship_components {
+    for _component_type in relationship_components {
         // Test the private is_relationship_component method through public interface
         // Would need proper component data to test extraction
     }
@@ -294,7 +293,7 @@ async fn test_entity_relationship_parsing() {
 
 #[tokio::test]
 async fn test_friendly_type_name_conversion() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     let test_cases = vec![
         (
@@ -316,9 +315,9 @@ async fn test_friendly_type_name_conversion() {
 
 #[tokio::test]
 async fn test_reflection_data_detection() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
-    let known_reflected_types = vec![
+    let known_reflected_types = [
         "bevy_transform::components::transform::Transform",
         "bevy_transform::components::global_transform::GlobalTransform",
         "bevy_core::name::Name",
@@ -327,7 +326,7 @@ async fn test_reflection_data_detection() {
         "bevy_hierarchy::components::children::Children",
     ];
 
-    let non_reflected_types = vec![
+    let non_reflected_types = [
         "custom::unknown::Component",
         "game::MyCustomComponent",
         "not::reflected::Data",
@@ -344,7 +343,7 @@ async fn test_reflection_data_detection() {
 
 #[tokio::test]
 async fn test_component_schema_generation() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test schema generation for known types
     let schema_test_cases = vec![
@@ -367,14 +366,12 @@ async fn test_cache_functionality() {
 
     // Test cache stats
     let (total, expired) = inspector.get_cache_stats().await;
-    assert!(total >= 0);
-    assert!(expired >= 0);
     assert!(expired <= total);
 }
 
 #[tokio::test]
 async fn test_batch_size_limits() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test various batch sizes
     let test_sizes = vec![1, 10, 50, 100, 150]; // 150 should be limited to MAX_BATCH_SIZE
@@ -399,13 +396,12 @@ async fn test_component_change_tracking() {
     // that component modification tracking works correctly
 
     // Basic structure test
-    let (cache_total, _) = inspector.get_cache_stats().await;
-    assert!(cache_total >= 0);
+    let (_cache_total, _expired) = inspector.get_cache_stats().await;
 }
 
 #[tokio::test]
 async fn test_entity_metadata_completeness() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test that entity metadata includes all expected fields:
     // - component_count
@@ -438,7 +434,7 @@ async fn test_entity_location_info() {
 
 #[tokio::test]
 async fn test_graceful_despawned_entity_handling() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test inspection of non-existent entities
     // Should return appropriate error responses rather than panicking
@@ -454,7 +450,7 @@ async fn test_graceful_despawned_entity_handling() {
 
 #[tokio::test]
 async fn test_concurrent_batch_processing() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test that batch processing handles chunks correctly
     // Should process entities in chunks of 10 for performance
@@ -530,7 +526,7 @@ async fn test_performance_requirements() {
 
 #[tokio::test]
 async fn test_memory_usage_estimates() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test that component memory size estimation works reasonably
 
@@ -542,11 +538,9 @@ async fn test_memory_usage_estimates() {
         (json!({"key": "value"}), 64, "object component"), // Rough estimate
     ];
 
-    for (component_value, expected_min_size, description) in test_components {
+    for (component_value, _expected_min_size, _description) in test_components {
         // Would verify size estimates through inspection metadata
         // Size should be at least the expected minimum
-        assert!(expected_min_size >= 0, "Testing {}", description);
-
         // Also ensure we don't crash on different JSON value types
         let _ = component_value;
     }
@@ -554,7 +548,7 @@ async fn test_memory_usage_estimates() {
 
 #[tokio::test]
 async fn test_entity_id_extraction() {
-    let inspector = create_test_inspector().await;
+    let _inspector = create_test_inspector().await;
 
     // Test entity ID extraction from various component formats
 
@@ -569,10 +563,9 @@ async fn test_entity_id_extraction() {
         (json!(-1), false, "negative number"),
     ];
 
-    for (component_value, should_extract, description) in test_cases {
+    for (component_value, _should_extract, _description) in test_cases {
         // Would test through relationship parsing in inspection
         // For now, just verify test data structure
-        assert!(should_extract || !should_extract, "Testing {}", description);
         let _ = component_value;
     }
 }

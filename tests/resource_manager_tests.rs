@@ -20,7 +20,7 @@ async fn test_resource_config_defaults() {
     assert!(config.adaptive_sampling_enabled);
     assert!(config.object_pooling_enabled);
     assert_eq!(config.circuit_breaker_threshold, 5);
-    }
+}
 
 #[tokio::test]
 async fn test_resource_manager_creation() {
@@ -31,11 +31,11 @@ async fn test_resource_manager_creation() {
     assert_eq!(metrics.concurrent_operations, 0);
     assert!(!metrics.circuit_breaker_open);
     assert!(metrics.adaptive_sampling_rate > 0.0);
-    }
+}
 
 #[tokio::test]
 async fn test_operation_permit_acquisition() {
-    let config = Resource{ let mut config = Config::default();
+    let config = ResourceConfig {
         max_concurrent_operations: 2,
         ..Default::default()
     };
@@ -51,7 +51,7 @@ async fn test_operation_permit_acquisition() {
     // Should still work with default semaphore behavior
     let permit3 = manager.acquire_operation_permit().await;
     assert!(permit3.is_ok());
-    }
+}
 
 #[tokio::test]
 async fn test_circuit_breaker() {
@@ -69,7 +69,7 @@ async fn test_circuit_breaker() {
     // Wait for timeout and check reset
     sleep(Duration::from_millis(150)).await;
     assert!(!breaker.is_open().await);
-    }
+}
 
 #[tokio::test]
 async fn test_rate_limiter() {
@@ -86,7 +86,7 @@ async fn test_rate_limiter() {
     // Wait and try again
     sleep(Duration::from_millis(1100)).await;
     assert!(limiter.allow_request().await);
-    }
+}
 
 #[tokio::test]
 async fn test_object_pool() {
@@ -110,7 +110,7 @@ async fn test_object_pool() {
     let s3 = pool.acquire().await;
     assert_eq!(pool.size(), 1);
     assert_eq!(s3.capacity(), 10);
-    }
+}
 
 #[tokio::test]
 async fn test_adaptive_sampler() {
@@ -119,14 +119,13 @@ async fn test_adaptive_sampler() {
     let initial_rate = sampler.get_sampling_rate().await;
     assert_eq!(initial_rate, 1.0);
 
-    // Test should_sample returns boolean
-    let should_sample = sampler.should_sample().await;
-    assert!(should_sample || !should_sample);
+    // Test should_sample executes without error
+    let _ = sampler.should_sample().await;
 
     // Add samples with low resource usage to increase rate
     for _ in 0..15 {
         sampler.add_sample(2.0, 10 * 1024 * 1024, 5).await;
-        }
+    }
 
     let new_rate = sampler.get_sampling_rate().await;
     // Rate should increase with low resource usage
@@ -135,16 +134,16 @@ async fn test_adaptive_sampler() {
     // Add samples with high resource usage to decrease rate
     for _ in 0..15 {
         sampler.add_sample(20.0, 90 * 1024 * 1024, 150).await;
-        }
+    }
 
     let final_rate = sampler.get_sampling_rate().await;
     // Rate should decrease with high resource usage
     assert!(final_rate <= new_rate);
-    }
+}
 
 #[tokio::test]
 async fn test_resource_manager_monitoring() {
-    let config = Resource{ let mut config = Config::default();
+    let config = ResourceConfig {
         monitoring_interval: Duration::from_millis(50),
         ..Default::default()
     };
@@ -161,11 +160,11 @@ async fn test_resource_manager_monitoring() {
 
     // Stop monitoring
     manager.shutdown().await.unwrap();
-    }
+}
 
 #[tokio::test]
 async fn test_string_and_buffer_pools() {
-    let config = Resource{ let mut config = Config::default();
+    let config = ResourceConfig {
         object_pooling_enabled: true,
         ..Default::default()
     };
@@ -188,7 +187,7 @@ async fn test_string_and_buffer_pools() {
 
     let buffer2 = manager.acquire_buffer().await;
     manager.release_buffer(buffer2).await;
-    }
+}
 
 #[tokio::test]
 async fn test_performance_dashboard() {
@@ -215,11 +214,11 @@ async fn test_performance_dashboard() {
     assert!(memory.get("current_bytes").is_some());
     assert!(memory.get("limit_bytes").is_some());
     assert!(memory.get("status").is_some());
-    }
+}
 
 #[tokio::test]
 async fn test_circuit_breaker_with_operation_tracking() {
-    let config = Resource{ let mut config = Config::default();
+    let config = ResourceConfig {
         circuit_breaker_threshold: 2,
         ..Default::default()
     };
@@ -238,11 +237,11 @@ async fn test_circuit_breaker_with_operation_tracking() {
     manager.record_operation_success().await;
     let metrics3 = manager.get_metrics().await;
     assert!(!metrics3.circuit_breaker_open);
-    }
+}
 
 #[tokio::test]
 async fn test_brp_rate_limiting() {
-    let config = Resource{ let mut config = Config::default();
+    let config = ResourceConfig {
         max_brp_requests_per_second: 2,
         ..Default::default()
     };
@@ -254,36 +253,36 @@ async fn test_brp_rate_limiting() {
 
     // Third request should be rate limited
     assert!(!manager.check_brp_rate_limit().await);
-    }
+}
 
 #[tokio::test]
 async fn test_sampling_decision() {
-    let config = Resource{ let mut config = Config::default();
+    let config = ResourceConfig {
         adaptive_sampling_enabled: true,
         ..Default::default()
     };
     let manager = ResourceManager::new(config);
 
-    // Should sample returns a boolean
-    let should_sample = manager.should_sample().await;
-    assert!(should_sample || !should_sample);
+    // Should sample executes without error
+    let _ = manager.should_sample().await;
 
     // Test with sampling disabled
-    let config_disabled = Resource{ let mut config = Config::default();
+    let config_disabled = ResourceConfig {
         adaptive_sampling_enabled: false,
         ..Default::default()
     };
     let manager_disabled = ResourceManager::new(config_disabled);
 
     assert!(manager_disabled.should_sample().await);
-    }
+}
 
 #[tokio::test]
 async fn test_mcp_server_integration() {
-    let config = { let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000; config
+    let config = Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Config::default()
     };
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let server = McpServer::new(config, brp_client);
@@ -317,14 +316,15 @@ async fn test_mcp_server_integration() {
 
     let status = health_value.get("status").unwrap().as_str().unwrap();
     assert!(["healthy", "degraded", "circuit_breaker_open"].contains(&status));
-    }
+}
 
 #[tokio::test]
 async fn test_health_check_status_determination() {
-    let config = { let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000; config
+    let config = Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Config::default()
     };
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let server = McpServer::new(config, brp_client);
@@ -354,7 +354,7 @@ async fn test_health_check_status_determination() {
     let circuit_check = checks.get("circuit_breaker").unwrap();
     assert!(circuit_check.get("status").is_some());
     assert!(circuit_check.get("open").is_some());
-    }
+}
 
 #[tokio::test]
 async fn test_graceful_degradation() {
@@ -364,11 +364,11 @@ async fn test_graceful_degradation() {
     // Test that graceful degradation doesn't fail
     let result = manager.implement_graceful_degradation().await;
     assert!(result.is_ok());
-    }
+}
 
 #[tokio::test]
 async fn test_resource_manager_shutdown() {
-    let config = Resource{ let mut config = Config::default();
+    let config = ResourceConfig {
         monitoring_interval: Duration::from_millis(10),
         ..Default::default()
     };
@@ -383,7 +383,7 @@ async fn test_resource_manager_shutdown() {
     // Shutdown should work without errors
     let result = manager.shutdown().await;
     assert!(result.is_ok());
-    }
+}
 
 #[tokio::test]
 async fn test_execution_id_uniqueness() {
@@ -408,7 +408,7 @@ async fn test_execution_id_uniqueness() {
     assert!(!str1.is_empty());
     assert!(!str2.is_empty());
     assert!(!str3.is_empty());
-    }
+}
 
 #[tokio::test]
 async fn test_resource_metrics_serialization() {
@@ -427,7 +427,7 @@ async fn test_resource_metrics_serialization() {
     assert!(json_value.get("memory_bytes").is_some());
     assert!(json_value.get("circuit_breaker_open").is_some());
     assert!(json_value.get("adaptive_sampling_rate").is_some());
-    }
+}
 
 #[tokio::test]
 async fn test_concurrent_resource_operations() {
@@ -450,14 +450,14 @@ async fn test_concurrent_resource_operations() {
             manager_clone.record_operation_success().await;
         });
         handles.push(handle);
-        }
+    }
 
     // Wait for all tasks to complete
     for handle in handles {
         handle.await.unwrap();
-        }
+    }
 
     // Verify system is still functioning
     let metrics = manager.get_metrics().await;
     assert!(!metrics.circuit_breaker_open);
-    }
+}

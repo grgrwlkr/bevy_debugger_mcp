@@ -297,10 +297,10 @@ fn test_branch_tree_visualization() {
     let feature_a = manager
         .create_branch("feature_a".to_string(), Some(master_id), 0)
         .unwrap();
-    let feature_b = manager
+    let _feature_b = manager
         .create_branch("feature_b".to_string(), Some(master_id), 0)
         .unwrap();
-    let hotfix = manager
+    let _hotfix = manager
         .create_branch("hotfix".to_string(), Some(feature_a), 5)
         .unwrap();
 

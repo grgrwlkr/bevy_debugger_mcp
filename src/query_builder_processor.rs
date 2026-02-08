@@ -423,7 +423,7 @@ impl QueryBuilderProcessor {
 
         // Add complexity for each component
         complexity += (builder.get_with_components().len() * 2) as u32;
-        complexity += (builder.get_without_components().len() * 1) as u32;
+        complexity += builder.get_without_components().len() as u32;
         complexity += (builder.get_component_filters().len() * 3) as u32;
 
         // Reduce complexity if query has good selectivity (limit specified)
@@ -537,10 +537,12 @@ mod tests {
     use serde_json::json;
 
     async fn create_test_processor() -> QueryBuilderProcessor {
-        let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
+        let config = Config {
+            bevy_brp_host: "localhost".to_string(),
+            bevy_brp_port: 15702,
+            mcp_port: 3000,
+            ..Config::default()
+        };
         let brp_client = Arc::new(RwLock::new(crate::brp_client::BrpClient::new(&config)));
         QueryBuilderProcessor::new(brp_client)
     }

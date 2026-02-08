@@ -3,8 +3,8 @@
 //! This module provides a CLI interface to run benchmarks and generate reports.
 
 use crate::lock_contention_benchmark::{
-    benchmark_message_passing, benchmark_std_rwlock, benchmark_tokio_rwlock,
-    print_benchmark_results, BenchmarkConfig, ContentionBenchmarkResults,
+    benchmark_message_passing, benchmark_std_rwlock, benchmark_tokio_rwlock, BenchmarkConfig,
+    ContentionBenchmarkResults,
 };
 use tracing::info;
 

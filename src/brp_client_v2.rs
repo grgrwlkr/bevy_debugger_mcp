@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 /*
  * Production-Grade BRP Client v2 with Resilience Features
  * Copyright (C) 2025 ladvien
@@ -19,9 +20,8 @@
 use crate::brp_messages::{BrpRequest, BrpResponse};
 use crate::circuit_breaker::{CircuitBreaker, CircuitState};
 use crate::config::Config;
-use crate::connection_pool::{ConnectionPool, PooledConnection};
+use crate::connection_pool::ConnectionPool;
 use crate::error::{Error, Result};
-use crate::heartbeat::HeartbeatService;
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::{sleep, timeout};
-use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
+use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -39,8 +39,10 @@ pub struct BrpClientV2 {
     connection_pool: Arc<Mutex<ConnectionPool>>,
     circuit_breaker: Arc<CircuitBreaker>,
     is_running: Arc<AtomicBool>,
+    #[allow(dead_code)]
     retry_count: Arc<AtomicU32>,
     metrics: Arc<RwLock<BrpClientMetrics>>,
+    #[allow(dead_code)]
     request_id_counter: Arc<AtomicU32>,
 }
 
@@ -82,6 +84,7 @@ impl BrpClientMetrics {
 
 /// Request wrapper with metadata for enhanced processing
 #[derive(Debug)]
+#[allow(dead_code)]
 struct RequestWrapper {
     id: Uuid,
     request: BrpRequest,
@@ -334,7 +337,7 @@ impl BrpClientV2 {
 
         // Add jitter if enabled
         if self.config.resilience.retry.jitter {
-            let jitter_factor = rand::thread_rng().gen_range(0.0..0.1); // 0-10% jitter
+            let jitter_factor = rand::rng().random_range(0.0..0.1); // 0-10% jitter
             let jitter_ms = (delay.as_millis() as f64 * jitter_factor) as u64;
             delay + Duration::from_millis(jitter_ms)
         } else {
@@ -405,9 +408,11 @@ mod tests {
 
     #[test]
     fn test_metrics_calculations() {
-        let mut metrics = BrpClientMetrics::default();
-        metrics.total_requests = 100;
-        metrics.successful_requests = 95;
+        let metrics = BrpClientMetrics {
+            total_requests: 100,
+            successful_requests: 95,
+            ..Default::default()
+        };
 
         assert_eq!(metrics.success_rate(), 95.0);
         assert!(metrics.meets_uptime_sla(90.0));

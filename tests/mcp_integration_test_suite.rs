@@ -7,20 +7,18 @@
  */
 
 use bevy_debugger_mcp::{brp_client::BrpClient, config::Config, mcp_tools::*};
-use rmcp::{handler::server::ServerHandler, model::*, Error as McpError};
-use serde_json::{json, Value};
+use rmcp::{handler::server::ServerHandler, model::*};
+use serde_json::json;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::RwLock, task::JoinSet, time::timeout};
-use tokio_test;
 use tracing::{debug, error, info, warn, Level};
-use tracing_subscriber;
 
 // Initialize tracing for test visibility
 fn setup_tracing() {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .with_test_writer()
-        .init();
+        .try_init();
 }
 
 // Test fixture for creating BevyDebuggerTools instance
@@ -235,7 +233,7 @@ async fn test_tool_parameter_validation() {
     setup_tracing();
     info!("Testing tool parameter validation");
 
-    let tools = create_test_tools().await;
+    let _tools = create_test_tools().await;
 
     // Test valid parameters work
     let valid_observe = ObserveRequest {
@@ -296,7 +294,7 @@ async fn test_error_scenarios() {
         Err(e) => {
             info!("✓ Large query failed gracefully: {}", e);
             // Verify it's a proper MCP error, not a panic
-            assert!(e.to_string().len() > 0);
+            assert!(!e.to_string().is_empty());
         }
     }
 
@@ -316,7 +314,7 @@ async fn test_error_scenarios() {
         Ok(_) => info!("✓ Extreme stress test handled successfully"),
         Err(e) => {
             info!("✓ Extreme stress test failed gracefully: {}", e);
-            assert!(e.to_string().len() > 0);
+            assert!(!e.to_string().is_empty());
         }
     }
 
@@ -390,21 +388,24 @@ async fn test_concurrent_operations() {
     let mut successful_operations = 0;
     let mut failed_operations = 0;
 
-    while let Some(result) = timeout(Duration::from_secs(30), join_set.join_next()).await {
-        match result {
-            Ok(Ok((op_id, success))) => {
-                if success {
-                    successful_operations += 1;
-                    debug!("Operation {} succeeded", op_id);
-                } else {
-                    failed_operations += 1;
-                    debug!("Operation {} failed (expected if no Bevy game)", op_id);
+    loop {
+        match timeout(Duration::from_secs(30), join_set.join_next()).await {
+            Ok(Some(result)) => match result {
+                Ok((op_id, success)) => {
+                    if success {
+                        successful_operations += 1;
+                        debug!("Operation {} succeeded", op_id);
+                    } else {
+                        failed_operations += 1;
+                        debug!("Operation {} failed (expected if no Bevy game)", op_id);
+                    }
                 }
-            }
-            Ok(Err(e)) => {
-                failed_operations += 1;
-                error!("Operation panicked: {}", e);
-            }
+                Err(e) => {
+                    failed_operations += 1;
+                    error!("Operation panicked: {}", e);
+                }
+            },
+            Ok(None) => break,
             Err(_) => {
                 failed_operations += 1;
                 error!("Operation timed out");
@@ -450,7 +451,7 @@ async fn test_connection_recovery_simulation() {
             Err(e) => {
                 info!("⚠ Attempt {} failed (expected): {}", attempt + 1, e);
                 // Verify error is handled gracefully
-                assert!(e.to_string().len() > 0);
+                assert!(!e.to_string().is_empty());
             }
         }
 
@@ -592,7 +593,7 @@ async fn test_full_mcp_protocol_flow() {
         Ok(_) => info!("✓ Phase 4: Edge case handled successfully"),
         Err(e) => {
             info!("✓ Phase 4: Error handled gracefully: {}", e);
-            assert!(e.to_string().len() > 0);
+            assert!(!e.to_string().is_empty());
         }
     }
 

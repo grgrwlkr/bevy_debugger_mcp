@@ -372,6 +372,7 @@ pub struct IssueDetector {
     /// Alert throttling map (pattern_id -> last_alert_time)
     throttle_map: Arc<RwLock<HashMap<String, Instant>>>,
     /// Active detectors
+    #[allow(dead_code)]
     active_detectors: Arc<RwLock<HashSet<String>>>,
     /// ML data collection buffer
     ml_data_buffer: Arc<RwLock<Vec<serde_json::Value>>>,
@@ -389,6 +390,7 @@ struct DetectionStatistics {
     /// Average detection latency
     avg_detection_latency_ms: f64,
     /// Detection rule hit counts
+    #[allow(dead_code)]
     rule_hits: HashMap<String, u64>,
     /// Last detection time
     last_detection: Option<Instant>,

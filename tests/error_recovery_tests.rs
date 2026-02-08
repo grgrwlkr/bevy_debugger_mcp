@@ -140,8 +140,8 @@ async fn test_diagnostic_collector() {
     let report = collector.generate_report(None).await.unwrap();
 
     assert_eq!(report.error_summary.recent_errors.len(), 5);
-    assert!(report.system_info.hostname.len() > 0);
-    assert!(report.environment_info.working_directory.len() > 0);
+    assert!(!report.system_info.hostname.is_empty());
+    assert!(!report.environment_info.working_directory.is_empty());
 
     // Check error distribution
     let error_count = report
@@ -500,7 +500,7 @@ async fn test_error_recovery_integration() {
     // Check if dead letter queue stats are included in error summary
     assert!(diagnostic_report.error_summary.dead_letter_stats.is_some());
 
-    let stats = checkpoint_manager.get_statistics().await;
+    let stats = checkpoint_manager.get_statistics().await.unwrap();
     assert_eq!(stats.total_count, 1);
 
     let dlq_stats = dlq.get_statistics().await;

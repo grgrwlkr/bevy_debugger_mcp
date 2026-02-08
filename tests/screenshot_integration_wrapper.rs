@@ -180,6 +180,7 @@ async fn test_screenshot_mcp_integration() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15709,
         mcp_port: 3009,
+        ..Config::default()
     };
 
     let brp_client = std::sync::Arc::new(tokio::sync::RwLock::new(BrpClient::new(&config)));
@@ -242,7 +243,7 @@ async fn test_screenshot_documentation() {
 
         // Check file is not empty
         let content = std::fs::read_to_string(&path)
-            .expect(&format!("Should be able to read {}", path.display()));
+            .unwrap_or_else(|_| panic!("Should be able to read {}", path.display()));
         assert!(
             !content.trim().is_empty(),
             "Documentation file should not be empty: {}",

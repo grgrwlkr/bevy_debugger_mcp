@@ -50,6 +50,7 @@ struct DetectionState {
     /// Frame time samples for spike detection
     frame_time_samples: Vec<f32>,
     /// System execution times
+    #[allow(dead_code)]
     system_times: HashMap<String, Vec<f32>>,
 }
 
@@ -409,7 +410,7 @@ impl DebugCommandProcessor for IssueDetectorProcessor {
             } => {
                 debug!("Updating detection rule: {}", name);
 
-                let mut current_rules = self.get_detection_rules().await;
+                let current_rules = self.get_detection_rules().await;
 
                 if let Some(mut rule) = current_rules.get(&name).cloned() {
                     if let Some(enabled) = enabled {
@@ -532,10 +533,12 @@ mod tests {
     use crate::config::Config;
 
     async fn create_test_processor() -> IssueDetectorProcessor {
-        let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
+        let config = Config {
+            bevy_brp_host: "localhost".to_string(),
+            bevy_brp_port: 15702,
+            mcp_port: 3000,
+            ..Config::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         IssueDetectorProcessor::new(brp_client)
     }

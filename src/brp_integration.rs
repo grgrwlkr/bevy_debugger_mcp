@@ -47,10 +47,10 @@ pub async fn setup_brp_client_with_debug(
 }
 
 /// Migrate existing command processing to use new handler system
-pub async fn migrate_existing_commands(brp_client: Arc<RwLock<BrpClient>>) {
+pub async fn migrate_existing_commands(_brp_client: Arc<RwLock<BrpClient>>) {
     info!("Migrating existing commands to new handler system");
 
-    // The CoreBrpHandler is already registered by default in BrpClient::new()
+    // The CoreBrpHandler is registered during BrpClient::init()
     // Additional migration can be added here if needed
 
     info!("Command migration complete");

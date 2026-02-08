@@ -244,10 +244,6 @@ impl ActionExecutor {
                 }
             }
             Ok(BrpResponse::Error(err)) => Ok(ActionResult::failure("spawn", err.message)),
-            Ok(_) => Ok(ActionResult::failure(
-                "spawn",
-                "Unexpected response type".to_string(),
-            )),
             Err(e) => Ok(ActionResult::failure("spawn", e.to_string())),
         }
     }
@@ -309,10 +305,6 @@ impl ActionExecutor {
                 }
             }
             Ok(BrpResponse::Error(err)) => Ok(ActionResult::failure("modify", err.message)),
-            Ok(_) => Ok(ActionResult::failure(
-                "modify",
-                "Unexpected response type".to_string(),
-            )),
             Err(e) => Ok(ActionResult::failure("modify", e.to_string())),
         }
     }
@@ -356,10 +348,6 @@ impl ActionExecutor {
                 }
             }
             Ok(BrpResponse::Error(err)) => Ok(ActionResult::failure("delete", err.message)),
-            Ok(_) => Ok(ActionResult::failure(
-                "delete",
-                "Unexpected response type".to_string(),
-            )),
             Err(e) => Ok(ActionResult::failure("delete", e.to_string())),
         }
     }

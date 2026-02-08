@@ -406,8 +406,11 @@ impl CommandCache {
         cache: &mut HashMap<String, CachedResult>,
         stats: &mut CacheStatistics,
     ) {
-        let access_order = self.access_order.read().await;
+        let mut access_order = self.access_order.write().await;
         let entries_to_evict = (cache.len() + 1).saturating_sub(self.config.max_entries);
+        if entries_to_evict == 0 {
+            return;
+        }
 
         // Evict from the end of access_order (least recently used)
         let mut evicted = 0;
@@ -420,6 +423,21 @@ impl CommandCache {
             }
         }
 
+        if evicted < entries_to_evict {
+            let remaining = entries_to_evict - evicted;
+            let fallback_keys: Vec<String> = cache.keys().take(remaining).cloned().collect();
+            for key in fallback_keys {
+                if let Some(removed) = cache.remove(&key) {
+                    stats.total_size_bytes =
+                        stats.total_size_bytes.saturating_sub(removed.size_bytes);
+                    stats.total_entries = stats.total_entries.saturating_sub(1);
+                    stats.evicted_entries += 1;
+                    evicted += 1;
+                }
+            }
+        }
+
+        access_order.retain(|key| cache.contains_key(key));
         debug!("Evicted {} LRU cache entries", evicted);
     }
 
@@ -451,7 +469,6 @@ impl CommandCache {
                 let mut access_order_guard = access_order.write().await;
 
                 let mut expired_keys = Vec::new();
-                let now = Instant::now();
 
                 for (key, cached_result) in cache_guard.iter() {
                     if cached_result.is_expired() {
@@ -481,6 +498,7 @@ impl CommandCache {
 }
 
 /// Get active feature flags as a string for cache key generation
+#[allow(clippy::vec_init_then_push)]
 fn get_active_feature_flags() -> String {
     let mut flags = Vec::new();
 

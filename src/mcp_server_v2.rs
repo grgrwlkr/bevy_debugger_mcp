@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use rmcp::{handler::server::ServerHandler, model::*, serve_server};
+use rmcp::serve_server;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};

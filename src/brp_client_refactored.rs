@@ -3,15 +3,14 @@
 //! This version uses interior mutability appropriately and can be shared
 //! as Arc<BrpClient> instead of Arc<RwLock<BrpClient>>
 
-use futures_util::{SinkExt, StreamExt};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio::time::{interval, Instant};
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-use tracing::{debug, error, info, warn};
+use tokio::sync::{mpsc, Mutex};
+use tokio::time::Instant;
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tracing::{error, info, warn};
 use url::Url;
 
 use crate::brp_command_handler::{BrpCommandHandler, CommandHandlerRegistry, CoreBrpHandler};
@@ -30,10 +29,12 @@ struct BatchedRequest {
 }
 
 impl BatchedRequest {
+    #[allow(dead_code)]
     async fn send_response(self, response: Result<BrpResponse>) {
         let _ = self.response_tx.send(response).await;
     }
 
+    #[allow(dead_code)]
     fn is_expired(&self, timeout: Duration) -> bool {
         self.timestamp.elapsed() > timeout
     }
@@ -266,7 +267,7 @@ impl BrpClient {
             // Queue the command and process it
             debug_router.queue_command(request).await?;
             match debug_router.process_next().await {
-                Some(Ok((_, response))) => Ok(BrpResponse::Success(Box::new(BrpResult::Success))),
+                Some(Ok((_, _response))) => Ok(BrpResponse::Success(Box::new(BrpResult::Success))),
                 Some(Err(e)) => Err(e),
                 None => Err(Error::Brp(
                     "No response from debug command processor".to_string(),
@@ -280,7 +281,7 @@ impl BrpClient {
         }
     }
 
-    async fn start_batch_processor(&self, state: &mut BrpClientState) {
+    async fn start_batch_processor(&self, _state: &mut BrpClientState) {
         // This would start the batch processor task
         // Implementation simplified for this example
         info!("Batch processor started");
@@ -307,6 +308,7 @@ impl BrpClient {
     }
 
     /// Process queued requests (internal method)
+    #[allow(dead_code)]
     async fn process_request_queue(&self) -> Result<()> {
         let mut state = self.state.lock().await;
 
@@ -329,7 +331,8 @@ impl BrpClient {
         Ok(())
     }
 
-    async fn process_single_request(&self, request: &BrpRequest) -> Result<BrpResponse> {
+    #[allow(dead_code)]
+    async fn process_single_request(&self, _request: &BrpRequest) -> Result<BrpResponse> {
         // Implementation would process the request
         // This is simplified for the example
         Ok(BrpResponse::Success(Box::new(BrpResult::Success)))
@@ -364,6 +367,7 @@ pub async fn create_brp_client_with_manager(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resource_manager::ResourceConfig;
 
     #[tokio::test]
     async fn test_brp_client_creation() {
@@ -376,7 +380,7 @@ mod tests {
     #[tokio::test]
     async fn test_brp_client_with_resource_manager() {
         let config = Config::default();
-        let resource_manager = Arc::new(ResourceManager::new());
+        let resource_manager = Arc::new(ResourceManager::new(ResourceConfig::default()));
         let client = create_brp_client_with_manager(&config, resource_manager)
             .await
             .unwrap();

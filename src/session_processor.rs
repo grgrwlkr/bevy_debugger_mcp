@@ -20,6 +20,7 @@ pub struct SessionProcessor {
     /// Session manager instance
     session_manager: Arc<SessionManager>,
     /// BRP client for command execution
+    #[allow(dead_code)]
     brp_client: Arc<RwLock<BrpClient>>,
 }
 
@@ -415,10 +416,12 @@ mod tests {
     use crate::config::Config;
 
     async fn create_test_session_processor() -> SessionProcessor {
-        let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
+        let config = Config {
+            bevy_brp_host: "localhost".to_string(),
+            bevy_brp_port: 15702,
+            mcp_port: 3000,
+            ..Default::default()
+        };
         let brp_client = Arc::new(RwLock::new(crate::brp_client::BrpClient::new(&config)));
         let processor = SessionProcessor::new(brp_client);
         processor.start().await.unwrap();
@@ -478,7 +481,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(version, "1.0.0");
-                assert!(active_sessions >= 0);
+                assert_eq!(active_sessions, 0);
             }
             _ => panic!("Expected Status response"),
         }

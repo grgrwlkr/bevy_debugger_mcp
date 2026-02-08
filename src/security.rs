@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -52,12 +52,12 @@ pub enum Role {
 impl Role {
     /// Check if this role has permission for an operation
     pub fn has_permission(&self, required_role: &Role) -> bool {
-        match (self, required_role) {
-            (Role::Admin, _) => true,
-            (Role::Developer, Role::Viewer | Role::Developer) => true,
-            (Role::Viewer, Role::Viewer) => true,
-            _ => false,
-        }
+        matches!(
+            (self, required_role),
+            (Role::Admin, _)
+                | (Role::Developer, Role::Viewer | Role::Developer)
+                | (Role::Viewer, Role::Viewer)
+        )
     }
 
     /// Get the minimum role level as a number for comparisons
@@ -159,7 +159,7 @@ impl SecurityManager {
                 .unwrap_or(std::num::NonZeroU32::new(100).unwrap()),
         )
         .allow_burst(
-            std::num::NonZeroU32::new(config.rate_limit_burst.try_into().unwrap_or(10))
+            std::num::NonZeroU32::new(config.rate_limit_burst)
                 .unwrap_or(std::num::NonZeroU32::new(10).unwrap()),
         );
         let rate_limiter = Arc::new(RateLimiter::direct(quota));
@@ -592,6 +592,7 @@ impl SecurityManager {
     }
 
     /// Log an audit entry
+    #[allow(clippy::too_many_arguments)]
     async fn log_audit(
         &self,
         action: &str,

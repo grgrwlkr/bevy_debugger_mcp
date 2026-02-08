@@ -3,7 +3,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use strsim::jaro_winkler;
 
-use crate::brp_messages::{BrpRequest, ComponentFilter, ComponentValue, FilterOp, QueryFilter};
+use crate::brp_messages::{BrpRequest, ComponentFilter, FilterOp, QueryFilter};
 use crate::error::{Error, Result};
 
 /// Game concepts that can be analyzed semantically
@@ -344,6 +344,7 @@ pub struct SemanticAnalyzer {
 
 struct SemanticPattern {
     pattern: Regex,
+    #[allow(dead_code)]
     concepts: Vec<GameConcept>,
     builder_fn: fn(&SemanticAnalyzer, &regex::Captures) -> Result<SemanticQueryBuilder>,
 }
@@ -552,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_semantic_analyzer_stuck_entities() {
-        let analyzer = SemanticAnalyzer::new();
+        let analyzer = SemanticAnalyzer::new().unwrap();
         let result = analyzer.analyze("find stuck entities").unwrap();
 
         assert_eq!(result.explanations.len(), 1);
@@ -562,7 +563,7 @@ mod tests {
 
     #[test]
     fn test_semantic_analyzer_fast_moving() {
-        let analyzer = SemanticAnalyzer::new();
+        let analyzer = SemanticAnalyzer::new().unwrap();
         let result = analyzer.analyze("show fast moving objects").unwrap();
 
         assert_eq!(result.explanations.len(), 1);
@@ -574,7 +575,7 @@ mod tests {
 
     #[test]
     fn test_compound_query() {
-        let analyzer = SemanticAnalyzer::new();
+        let analyzer = SemanticAnalyzer::new().unwrap();
         let result = analyzer.analyze("find stuck and fast entities").unwrap();
 
         assert_eq!(result.explanations.len(), 2);
@@ -582,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_fuzzy_matching() {
-        let analyzer = SemanticAnalyzer::new();
+        let analyzer = SemanticAnalyzer::new().unwrap();
         let result = analyzer.analyze("find stuk entities"); // Typo
 
         assert!(result.is_err());
@@ -598,7 +599,7 @@ mod tests {
             ..Default::default()
         };
 
-        let analyzer = SemanticAnalyzer::with_thresholds(custom_thresholds);
+        let analyzer = SemanticAnalyzer::with_thresholds(custom_thresholds).unwrap();
         let result = analyzer.analyze("find stuck entities").unwrap();
 
         assert!(result.explanations[0].reason.contains("0.05"));

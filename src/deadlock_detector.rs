@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, ThreadId};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Unique identifier for locks
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,6 +23,7 @@ impl LockId {
 
 /// Information about a lock acquisition
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct LockAcquisition {
     lock_id: LockId,
     thread_id: ThreadId,
@@ -35,6 +36,7 @@ struct LockAcquisition {
 enum LockType {
     Read,
     Write,
+    #[allow(dead_code)]
     Exclusive, // Mutex
 }
 
@@ -64,6 +66,12 @@ pub struct DeadlockDetector {
     monitoring_enabled: bool,
 }
 
+impl Default for DeadlockDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeadlockDetector {
     pub fn new() -> Self {
         Self {
@@ -79,12 +87,7 @@ impl DeadlockDetector {
     }
 
     /// Register a lock acquisition attempt
-    pub fn register_lock_attempt(
-        &self,
-        lock_id: LockId,
-        lock_type: LockType,
-        location: &'static str,
-    ) {
+    fn register_lock_attempt(&self, lock_id: LockId, _lock_type: LockType, location: &'static str) {
         if !self.monitoring_enabled {
             return;
         }
@@ -126,11 +129,7 @@ impl DeadlockDetector {
         let thread_id = thread::current().id();
         let mut state = self.state.lock().unwrap();
 
-        state
-            .held_locks
-            .entry(thread_id)
-            .or_insert_with(Vec::new)
-            .push(lock_id);
+        state.held_locks.entry(thread_id).or_default().push(lock_id);
     }
 
     /// Register lock release
@@ -281,7 +280,7 @@ macro_rules! tracked_rwlock {
     ($expr:expr, $name:expr) => {
         #[cfg(debug_assertions)]
         {
-            crate::deadlock_detector::TrackedRwLock::new($expr, $name)
+            $crate::deadlock_detector::TrackedRwLock::new($expr, $name)
         }
         #[cfg(not(debug_assertions))]
         {
@@ -294,8 +293,6 @@ macro_rules! tracked_rwlock {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use std::thread;
-    use std::time::Duration;
 
     #[test]
     fn test_deadlock_detector_creation() {
@@ -328,7 +325,7 @@ mod tests {
     #[test]
     fn test_tracked_rwlock() {
         let data = Arc::new(RwLock::new(42));
-        let tracked = TrackedRwLock::new(data, "test_lock");
+        let _tracked = TrackedRwLock::new(data, "test_lock");
 
         // This would work in an async context
         // let guard = tracked.read().await;

@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use futures_util::{SinkExt, StreamExt};
 use regex::Regex;
 use reqwest::Client as HttpClient;
@@ -33,6 +35,7 @@ struct BatchedRequest {
 
 impl BatchedRequest {
     /// Send response and handle channel cleanup
+    #[allow(dead_code)]
     async fn send_response(self, response: Result<BrpResponse>) {
         // Attempt to send response, ignoring receiver disconnect errors
         // as this is normal when the receiver is dropped
@@ -40,6 +43,7 @@ impl BatchedRequest {
     }
 
     /// Check if request has expired based on timeout
+    #[allow(dead_code)]
     fn is_expired(&self, timeout: Duration) -> bool {
         self.timestamp.elapsed() > timeout
     }
@@ -548,7 +552,7 @@ impl BrpClient {
 
     fn map_jsonrpc_error(&self, error: JsonRpcError) -> BrpResponse {
         let code = match error.code {
-            -32600 | -32601 | -32602 => BrpErrorCode::InvalidQuery,
+            -32602..=-32600 => BrpErrorCode::InvalidQuery,
             _ => BrpErrorCode::InternalError,
         };
 
@@ -759,7 +763,7 @@ impl BrpClient {
             let mut resolved_filters = Vec::with_capacity(where_clause.len());
             for clause in where_clause {
                 let resolved_component = self
-                    .resolve_component_types(&[clause.component.clone()])
+                    .resolve_component_types(std::slice::from_ref(&clause.component))
                     .await?;
                 let mut resolved_clause = clause.clone();
                 if let Some(component) = resolved_component.first() {

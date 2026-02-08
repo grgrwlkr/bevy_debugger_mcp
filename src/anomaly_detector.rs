@@ -98,6 +98,7 @@ pub struct AnomalyPattern {
 #[derive(Debug, Clone)]
 struct DataPoint {
     value: f32,
+    #[allow(dead_code)]
     timestamp: Instant,
 }
 
@@ -325,9 +326,11 @@ impl AnomalyDetector for PhysicsDetector {
 
 /// Performance metrics detector
 pub struct PerformanceDetector {
+    #[allow(dead_code)]
     frame_times: RingBuffer<DataPoint>,
     entity_counts: RingBuffer<DataPoint>,
     config: AnomalyConfig,
+    #[allow(dead_code)]
     last_entity_count: Option<usize>,
 }
 
@@ -488,11 +491,11 @@ impl AnomalyDetectionSystem {
     /// Create a new anomaly detection system
     #[must_use]
     pub fn new(config: AnomalyConfig) -> Self {
-        let mut detectors: Vec<Box<dyn AnomalyDetector>> = Vec::new();
-
-        detectors.push(Box::new(PhysicsDetector::new(config.clone())));
-        detectors.push(Box::new(PerformanceDetector::new(config.clone())));
-        detectors.push(Box::new(ConsistencyDetector::new(config.clone())));
+        let detectors: Vec<Box<dyn AnomalyDetector>> = vec![
+            Box::new(PhysicsDetector::new(config.clone())),
+            Box::new(PerformanceDetector::new(config.clone())),
+            Box::new(ConsistencyDetector::new(config.clone())),
+        ];
 
         Self {
             detectors,
@@ -649,9 +652,9 @@ mod tests {
         // Let's check that the quartiles are reasonable
         assert!(q1 <= q2);
         assert!(q2 <= q3);
-        assert!(q1 >= 1.0 && q1 <= 3.0);
-        assert!(q2 >= 3.0 && q2 <= 5.0);
-        assert!(q3 >= 5.0 && q3 <= 8.0);
+        assert!((1.0..=3.0).contains(&q1));
+        assert!((3.0..=5.0).contains(&q2));
+        assert!((5.0..=8.0).contains(&q3));
     }
 
     #[test]
@@ -673,12 +676,12 @@ mod tests {
         };
 
         // First detection should not trigger (not enough samples)
-        let anomalies = detector.detect(&[entity.clone()]).unwrap();
+        let anomalies = detector.detect(std::slice::from_ref(&entity)).unwrap();
         assert!(anomalies.is_empty());
 
         // Add more samples to build history
         for _ in 0..15 {
-            let _ = detector.detect(&[entity.clone()]);
+            let _ = detector.detect(std::slice::from_ref(&entity));
         }
 
         // Now add an extreme value

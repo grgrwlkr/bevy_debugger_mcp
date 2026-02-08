@@ -88,9 +88,11 @@ impl VisualDebugOverlayState {
         let overlay_key = self.overlay_type_to_key(overlay_type);
 
         // Create the overlay config first
-        let mut new_config = OverlayConfig::default();
-        new_config.enabled = enabled;
-        new_config.last_updated = Instant::now();
+        let mut new_config = OverlayConfig {
+            enabled,
+            last_updated: Instant::now(),
+            ..OverlayConfig::default()
+        };
 
         if let Some(cfg) = config {
             new_config.config = cfg;
@@ -103,11 +105,12 @@ impl VisualDebugOverlayState {
             new_config.config
         );
 
+        // Store desired state locally even if BRP sync fails
+        self.overlays
+            .insert(overlay_key.clone(), new_config.clone());
+
         // Send command to Bevy game via BRP
         self.sync_overlay_to_bevy(overlay_type, &new_config).await?;
-
-        // Store the config after successful sync
-        self.overlays.insert(overlay_key, new_config);
 
         Ok(())
     }
@@ -216,10 +219,6 @@ impl VisualDebugOverlayState {
                     "Overlay sync failed: {}",
                     error.message
                 )))
-            }
-            Ok(response) => {
-                warn!("Unexpected BRP response for overlay sync: {:?}", response);
-                Err(Error::Brp("Unexpected response type".to_string()))
             }
             Err(e) => {
                 error!(
@@ -371,10 +370,12 @@ mod tests {
     use crate::config::Config;
 
     async fn create_test_processor() -> VisualDebugOverlayProcessor {
-        let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
+        let config = Config {
+            bevy_brp_host: "localhost".to_string(),
+            bevy_brp_port: 15702,
+            mcp_port: 3000,
+            ..Config::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         VisualDebugOverlayProcessor::new(brp_client)
     }
@@ -457,6 +458,10 @@ mod tests {
 
         {
             let mut state_guard = state.write().await;
+
+            let _ = state_guard
+                .set_overlay_enabled(&DebugOverlayType::EntityHighlight, true, None)
+                .await;
 
             // Simulate performance metrics that exceed budget
             let high_cost_metrics = OverlayMetrics {

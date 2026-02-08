@@ -6,7 +6,6 @@ use tokio::sync::RwLock;
 use bevy_debugger_mcp::brp_client::BrpClient;
 use bevy_debugger_mcp::config::Config;
 use bevy_debugger_mcp::tool_orchestration::*;
-use bevy_debugger_mcp::tools::orchestration;
 
 /// Mock tool executor for testing
 struct MockToolExecutor {
@@ -14,7 +13,7 @@ struct MockToolExecutor {
     success: bool,
     output: Value,
     delay: Duration,
-    }
+}
 
 impl MockToolExecutor {
     fn new(name: &str, success: bool, output: Value, delay: Duration) -> Self {
@@ -23,9 +22,9 @@ impl MockToolExecutor {
             success,
             output,
             delay,
-            }
         }
     }
+}
 
 #[async_trait::async_trait]
 impl ToolExecutor for MockToolExecutor {
@@ -33,7 +32,7 @@ impl ToolExecutor for MockToolExecutor {
         &self,
         _arguments: Value,
         _brp_client: Arc<RwLock<BrpClient>>,
-        context: &mut ToolContext,
+        _context: &mut ToolContext,
     ) -> bevy_debugger_mcp::error::Result<Value> {
         tokio::time::sleep(self.delay).await;
 
@@ -44,18 +43,19 @@ impl ToolExecutor for MockToolExecutor {
                 "Mock {} failed",
                 self.name
             )))
-            }
         }
     }
+}
 
 fn create_test_brp_client() -> Arc<RwLock<BrpClient>> {
-    let config = { let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000; config
+    let config = Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Default::default()
     };
     Arc::new(RwLock::new(BrpClient::new(&config)))
-    }
+}
 
 #[tokio::test]
 async fn test_tool_context_basic_operations() {
@@ -80,7 +80,7 @@ async fn test_tool_context_basic_operations() {
     context.add_result("test_tool".to_string(), result);
     assert!(context.get_result("test_tool").is_some());
     assert_eq!(context.metadata.execution_count, 1);
-    }
+}
 
 #[tokio::test]
 async fn test_orchestrator_tool_execution() {
@@ -110,7 +110,7 @@ async fn test_orchestrator_tool_execution() {
     assert!(tool_result.success);
     assert_eq!(tool_result.tool_name, "mock_observe");
     assert!(context.get_result("mock_observe").is_some());
-    }
+}
 
 #[tokio::test]
 async fn test_orchestrator_caching() {
@@ -156,7 +156,7 @@ async fn test_orchestrator_caching() {
     // Second execution should be faster due to caching
     assert!(second_duration < first_duration);
     assert_eq!(result1.output, result2.output);
-    }
+}
 
 #[tokio::test]
 async fn test_pipeline_execution_sequential() {
@@ -214,7 +214,7 @@ async fn test_pipeline_execution_sequential() {
     assert!(pipeline_result.success);
     assert_eq!(pipeline_result.step_results.len(), 2);
     assert!(pipeline_result.step_results.iter().all(|r| r.success));
-    }
+}
 
 #[tokio::test]
 async fn test_pipeline_execution_with_failure() {
@@ -270,7 +270,7 @@ async fn test_pipeline_execution_with_failure() {
     assert_eq!(pipeline_result.step_results.len(), 2);
     assert!(pipeline_result.step_results[0].success);
     assert!(!pipeline_result.step_results[1].success);
-    }
+}
 
 #[tokio::test]
 async fn test_dependency_graph_ordering() {
@@ -291,7 +291,7 @@ async fn test_dependency_graph_ordering() {
 
     // Should be in dependency order
     assert_eq!(order, vec!["observe", "experiment", "replay", "analysis"]);
-    }
+}
 
 #[tokio::test]
 async fn test_dependency_graph_circular_detection() {
@@ -303,7 +303,7 @@ async fn test_dependency_graph_circular_detection() {
 
     let result = graph.get_execution_order(&["a".to_string(), "b".to_string(), "c".to_string()]);
     assert!(result.is_err());
-    }
+}
 
 #[tokio::test]
 async fn test_workflow_dsl_templates() {
@@ -326,7 +326,7 @@ async fn test_workflow_dsl_templates() {
     assert_eq!(debug_pipeline.steps.len(), 2);
     assert_eq!(debug_pipeline.steps[0].tool, "stress");
     assert_eq!(debug_pipeline.steps[1].tool, "anomaly");
-    }
+}
 
 #[tokio::test]
 async fn test_retry_mechanism() {
@@ -348,7 +348,7 @@ async fn test_retry_mechanism() {
         tool: "retry_tool".to_string(),
         arguments: json!({}),
         condition: None,
-        retry_config: Some(Retry{ let mut config = Config::default();
+        retry_config: Some(RetryConfig {
             max_attempts: 3,
             backoff_type: BackoffType::Fixed,
             initial_delay: Duration::from_millis(10),
@@ -357,13 +357,22 @@ async fn test_retry_mechanism() {
         timeout: None,
     };
 
-    let mut context = ToolContext::new();
-    let result = orchestrator.execute_step(&step, &mut context).await;
+    let mut pipeline = ToolPipeline::new("retry_pipeline".to_string());
+    pipeline.add_step(step);
+    let context = ToolContext::new();
+    let result = orchestrator
+        .execute_pipeline(pipeline, context)
+        .await
+        .unwrap();
+    let step_result = result
+        .step_results
+        .first()
+        .expect("Expected a single step result");
 
     // Should have attempted multiple times
-    assert!(!result.success);
-    assert_eq!(result.retry_count, 3);
-    }
+    assert!(!step_result.success);
+    assert_eq!(step_result.retry_count, 3);
+}
 
 #[tokio::test]
 async fn test_pipeline_timeout() {
@@ -402,16 +411,20 @@ async fn test_pipeline_timeout() {
 
     // Should timeout
     assert!(result.is_err() || start_time.elapsed() < Duration::from_secs(1));
-    }
+}
 
 #[tokio::test]
 async fn test_step_conditions() {
     let brp_client = create_test_brp_client();
-    let orchestrator = ToolOrchestrator::new(brp_client);
+    let mut orchestrator = ToolOrchestrator::new(brp_client);
+    let mock_tool = Arc::new(MockToolExecutor::new(
+        "test",
+        true,
+        json!({"ok": true}),
+        Duration::from_millis(1),
+    ));
+    orchestrator.register_tool("test".to_string(), mock_tool);
 
-    let mut context = ToolContext::new();
-
-    // Add a successful result to context
     let success_result = ToolResult {
         tool_name: "previous".to_string(),
         execution_id: ExecutionId::new(),
@@ -422,7 +435,6 @@ async fn test_step_conditions() {
         timestamp: std::time::SystemTime::now(),
         cache_key: None,
     };
-    context.add_result("previous".to_string(), success_result);
 
     // Test OnSuccess condition
     let step_on_success = PipelineStep {
@@ -438,7 +450,17 @@ async fn test_step_conditions() {
         timeout: None,
     };
 
-    assert!(orchestrator.should_execute_step(&step_on_success, &context));
+    let mut context = ToolContext::new();
+    context.add_result("previous".to_string(), success_result.clone());
+    let mut pipeline = ToolPipeline::new("on_success".to_string());
+    pipeline.add_step(step_on_success);
+    let result = orchestrator
+        .execute_pipeline(pipeline, context)
+        .await
+        .unwrap();
+    let step_result = result.step_results.first().expect("Expected a step result");
+    assert!(step_result.success);
+    assert!(step_result.error.is_none());
 
     // Test OnFailure condition
     let step_on_failure = PipelineStep {
@@ -454,10 +476,22 @@ async fn test_step_conditions() {
         timeout: None,
     };
 
-    assert!(!orchestrator.should_execute_step(&step_on_failure, &context));
+    let mut context = ToolContext::new();
+    context.add_result("previous".to_string(), success_result.clone());
+    let mut pipeline = ToolPipeline::new("on_failure".to_string());
+    pipeline.add_step(step_on_failure);
+    let result = orchestrator
+        .execute_pipeline(pipeline, context)
+        .await
+        .unwrap();
+    let step_result = result.step_results.first().expect("Expected a step result");
+    assert!(step_result.result.is_none());
+    assert!(step_result
+        .error
+        .as_deref()
+        .is_some_and(|msg| msg.contains("condition")));
 
     // Test variable condition
-    context.set_variable("test_var".to_string(), json!("expected"));
     let step_var_equals = PipelineStep {
         name: "conditional".to_string(),
         tool: "test".to_string(),
@@ -471,37 +505,76 @@ async fn test_step_conditions() {
         timeout: None,
     };
 
-    assert!(orchestrator.should_execute_step(&step_var_equals, &context));
-    }
+    let mut context = ToolContext::new();
+    context.set_variable("test_var".to_string(), json!("expected"));
+    let mut pipeline = ToolPipeline::new("var_equals".to_string());
+    pipeline.add_step(step_var_equals);
+    let result = orchestrator
+        .execute_pipeline(pipeline, context)
+        .await
+        .unwrap();
+    let step_result = result.step_results.first().expect("Expected a step result");
+    assert!(step_result.success);
+    assert!(step_result.error.is_none());
+}
 
 #[tokio::test]
 async fn test_cache_key_generation() {
     let brp_client = create_test_brp_client();
-    let orchestrator = ToolOrchestrator::new(brp_client);
+    let mut orchestrator = ToolOrchestrator::new(brp_client);
+    let mock_tool = Arc::new(MockToolExecutor::new(
+        "test_tool",
+        true,
+        json!({"ok": true}),
+        Duration::from_millis(1),
+    ));
+    let other_tool = Arc::new(MockToolExecutor::new(
+        "other_tool",
+        true,
+        json!({"ok": true}),
+        Duration::from_millis(1),
+    ));
+    orchestrator.register_tool("test_tool".to_string(), mock_tool);
+    orchestrator.register_tool("other_tool".to_string(), other_tool);
 
     let args1 = json!({"param": "value", "count": 42});
     let args2 = json!({"count": 42, "param": "value"});
     let args3 = json!({"param": "different", "count": 42});
 
-    let key1 = orchestrator.generate_cache_key("test_tool", &args1);
-    let key2 = orchestrator.generate_cache_key("test_tool", &args2);
-    let key3 = orchestrator.generate_cache_key("test_tool", &args3);
-    let key4 = orchestrator.generate_cache_key("other_tool", &args1);
+    let mut context = ToolContext::new();
+    context.config.cache_results = true;
+
+    let result1 = orchestrator
+        .execute_tool("test_tool".to_string(), args1.clone(), &mut context)
+        .await
+        .unwrap();
+    let result2 = orchestrator
+        .execute_tool("test_tool".to_string(), args2.clone(), &mut context)
+        .await
+        .unwrap();
+    let result3 = orchestrator
+        .execute_tool("test_tool".to_string(), args3.clone(), &mut context)
+        .await
+        .unwrap();
+    let result4 = orchestrator
+        .execute_tool("other_tool".to_string(), args1.clone(), &mut context)
+        .await
+        .unwrap();
 
     // Same arguments should produce same key (JSON normalization)
-    assert_eq!(key1, key2);
+    assert_eq!(result1.cache_key, result2.cache_key);
 
     // Different arguments should produce different keys
-    assert_ne!(key1, key3);
+    assert_ne!(result1.cache_key, result3.cache_key);
 
     // Different tools should produce different keys
-    assert_ne!(key1, key4);
+    assert_ne!(result1.cache_key, result4.cache_key);
 
     // All keys should be present
-    assert!(key1.is_some());
-    assert!(key3.is_some());
-    assert!(key4.is_some());
-    }
+    assert!(result1.cache_key.is_some());
+    assert!(result3.cache_key.is_some());
+    assert!(result4.cache_key.is_some());
+}
 
 #[tokio::test]
 async fn test_context_execution_count() {
@@ -524,7 +597,7 @@ async fn test_context_execution_count() {
 
     context.add_result("test2".to_string(), result);
     assert_eq!(context.metadata.execution_count, 2);
-    }
+}
 
 #[tokio::test]
 async fn test_execution_id_uniqueness() {
@@ -541,4 +614,4 @@ async fn test_execution_id_uniqueness() {
     let id2_str = id2.to_string();
     assert_ne!(id1_str, id2_str);
     assert!(!id1_str.is_empty());
-    }
+}

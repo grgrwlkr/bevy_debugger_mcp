@@ -13,22 +13,21 @@ use bevy_debugger_mcp::brp_messages::{
 };
 use bevy_debugger_mcp::config::Config;
 use bevy_debugger_mcp::debug_command_processor::DebugCommandProcessor;
-use bevy_debugger_mcp::error::{Error, Result};
 use bevy_debugger_mcp::session_manager::{SessionManager, SessionManagerConfig};
 use bevy_debugger_mcp::session_processor::SessionProcessor;
-use serde_json::json;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 
 /// Helper to create test configuration
 fn create_test_config() -> Config {
-    let mut config = Config::default();
-    config.bevy_brp_host = "localhost".to_string();
-    config.bevy_brp_port = 15702;
-    config.mcp_port = 3000;
-    config
+    Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Config::default()
+    }
 }
 
 /// Helper to create session manager for testing
@@ -205,7 +204,7 @@ async fn test_command_replay_functionality() {
         .unwrap();
 
     // Record a sequence of commands
-    let commands = vec![
+    let commands = [
         DebugCommand::GetMemoryProfile,
         DebugCommand::GetMemoryStatistics,
         DebugCommand::TakeMemorySnapshot,
@@ -259,10 +258,12 @@ async fn test_command_replay_functionality() {
 
 #[tokio::test]
 async fn test_session_cleanup_functionality() {
-    let mut config = SessionManagerConfig::default();
-    config.default_cleanup_hours = 0; // Immediate cleanup
-    config.cleanup_interval_minutes = 1; // Check every minute
-    config.enable_persistence = false;
+    let config = SessionManagerConfig {
+        default_cleanup_hours: 0,    // Immediate cleanup
+        cleanup_interval_minutes: 1, // Check every minute
+        enable_persistence: false,
+        ..SessionManagerConfig::default()
+    };
 
     let manager = SessionManager::new(config);
     manager.start().await.unwrap();
@@ -546,7 +547,7 @@ async fn test_session_processor_command_history_integration() {
     };
 
     // Record command executions
-    let test_commands = vec![
+    let test_commands = [
         DebugCommand::GetMemoryProfile,
         DebugCommand::GetMemoryStatistics,
         DebugCommand::TakeMemorySnapshot,

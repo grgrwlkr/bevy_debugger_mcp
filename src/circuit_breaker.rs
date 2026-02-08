@@ -306,7 +306,7 @@ mod tests {
         let metrics = breaker.get_metrics();
         assert_eq!(metrics.success_count, 2);
         assert_eq!(metrics.failure_count, 1);
-        assert_eq!(metrics.failure_rate(), 33.333333333333336);
+        assert!((metrics.failure_rate() - (100.0 / 3.0)).abs() < 1e-10);
         assert!(metrics.is_healthy());
     }
 }

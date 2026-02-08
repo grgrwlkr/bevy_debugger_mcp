@@ -3,21 +3,17 @@
 //! This module implements the actor model for replay functionality, eliminating
 //! the need for shared mutable state through locks.
 
-use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 use crate::brp_client::BrpClient;
 use crate::error::{Error, Result};
 use crate::playback_system::{DirectSync, PlaybackController};
-use crate::recording_system::{RecordingBuffer, RecordingConfig, RecordingState};
-use crate::timeline_branching::{
-    BranchId, MergeStrategy, Modification, ModificationLayer, TimelineBranchManager,
-};
+use crate::recording_system::{RecordingConfig, RecordingState};
+use crate::timeline_branching::{BranchId, MergeStrategy, Modification, TimelineBranchManager};
 
 /// Messages that can be sent to the replay actor
 #[derive(Debug)]
@@ -212,7 +208,9 @@ pub struct BranchEdge {
 /// Internal state of the replay actor
 struct ReplayActorState {
     recording_state: RecordingState,
+    #[allow(dead_code)]
     playback_controller: PlaybackController,
+    #[allow(dead_code)]
     branch_manager: TimelineBranchManager,
     brp_client: Arc<BrpClient>, // Note: no longer wrapped in RwLock
     current_recording_config: Option<RecordingConfig>,
@@ -473,8 +471,8 @@ impl ReplayActor {
 
     async fn create_branch(
         &mut self,
-        name: String,
-        description: Option<String>,
+        _name: String,
+        _description: Option<String>,
     ) -> Result<BranchId> {
         // Implementation would create new branch
         Ok(BranchId::new())
@@ -570,9 +568,9 @@ impl ReplayActorHandle {
         self.sender
             .send(message)
             .map_err(|_| Error::Internal("Replay actor disconnected".to_string()))?;
-        Ok(response
+        response
             .await
-            .map_err(|_| Error::Internal("Response channel closed".to_string()))?)
+            .map_err(|_| Error::Internal("Response channel closed".to_string()))
     }
 
     // Add similar methods for all other operations...

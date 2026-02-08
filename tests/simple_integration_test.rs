@@ -5,7 +5,7 @@
 use bevy_debugger_mcp::{
     brp_client::BrpClient, config::Config, error::Result, mcp_server::McpServer,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -13,10 +13,12 @@ use tokio::time::timeout;
 
 /// Create a test MCP server for integration testing
 async fn create_test_server() -> Result<McpServer> {
-    let mut config = Config::default();
-    config.bevy_brp_host = "localhost".to_string();
-    config.bevy_brp_port = 15702;
-    config.mcp_port = 3001; // Different port to avoid conflicts
+    let config = Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3001, // Different port to avoid conflicts
+        ..Default::default()
+    };
 
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let server = McpServer::new(config, brp_client);

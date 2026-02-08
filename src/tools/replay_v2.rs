@@ -6,7 +6,7 @@
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 use crate::brp_client::BrpClient;
 use crate::error::{Error, Result};

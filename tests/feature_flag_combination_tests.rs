@@ -19,6 +19,7 @@ async fn test_basic_debugging_features_only() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
 
     let brp_client = Arc::new(tokio::sync::RwLock::new(BrpClient::new(&config)));
@@ -46,17 +47,20 @@ async fn test_basic_debugging_features_only() {
 #[tokio::test]
 #[cfg(feature = "caching")]
 async fn test_caching_feature_enabled() {
-    use bevy_debugger_mcp::command_cache::{CacheConfig, CommandCache};
+    use bevy_debugger_mcp::command_cache::{CacheConfig, CacheKey, CommandCache};
 
     let cache = CommandCache::new(CacheConfig::default());
 
     // Test cache operations
     let test_data = json!({"test": "cached_data"});
+    let args = json!({"arg": "value"});
+    let key = CacheKey::new("test_command", &args).expect("Failed to build cache key");
     cache
-        .set("test_command", &json!({"arg": "value"}), test_data.clone())
-        .await;
+        .put(&key, test_data.clone(), vec![])
+        .await
+        .expect("Failed to cache data");
 
-    let cached_result = cache.get("test_command", &json!({"arg": "value"})).await;
+    let cached_result = cache.get(&key).await;
     assert!(
         cached_result.is_some(),
         "Caching should work when feature is enabled"
@@ -79,6 +83,7 @@ async fn test_caching_feature_disabled() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
 
     let brp_client = Arc::new(tokio::sync::RwLock::new(BrpClient::new(&config)));
@@ -93,6 +98,8 @@ async fn test_caching_feature_disabled() {
         .await;
 
     // Both should work, but no caching benefits expected
+    assert!(result1.is_ok());
+    assert!(result2.is_ok());
     println!("System works correctly without caching feature: ✓");
 }
 
@@ -131,6 +138,7 @@ async fn test_lazy_init_feature_enabled() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
 
     let brp_client = Arc::new(tokio::sync::RwLock::new(BrpClient::new(&config)));
@@ -153,7 +161,7 @@ async fn test_lazy_init_feature_enabled() {
 
 /// Test with all optimization features enabled
 #[tokio::test]
-#[cfg(all(feature = "optimizations"))]
+#[cfg(feature = "optimizations")]
 async fn test_all_optimizations_enabled() {
     use bevy_debugger_mcp::{
         command_cache::CommandCache, lazy_init::LazyComponents, response_pool::ResponsePool,
@@ -163,6 +171,7 @@ async fn test_all_optimizations_enabled() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
 
     // All optimization systems should be available
@@ -193,10 +202,14 @@ async fn test_all_optimizations_enabled() {
 
     // Test caching
     let test_data = json!({"optimized": true});
+    let test_args = json!({"key": "value"});
+    let cache_key = bevy_debugger_mcp::command_cache::CacheKey::new("test", &test_args)
+        .expect("Failed to build cache key");
     cache
-        .set("test", &json!({"key": "value"}), test_data.clone())
-        .await;
-    let cached = cache.get("test", &json!({"key": "value"})).await;
+        .put(&cache_key, test_data.clone(), vec![])
+        .await
+        .expect("Failed to cache data");
+    let cached = cache.get(&cache_key).await;
     assert_eq!(cached.unwrap(), test_data, "Caching should work");
 
     // Test pooling
@@ -308,6 +321,7 @@ async fn test_disabled_features_compilation() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
 
     let brp_client = Arc::new(tokio::sync::RwLock::new(BrpClient::new(&config)));
@@ -315,6 +329,7 @@ async fn test_disabled_features_compilation() {
 
     // Basic functionality should always work regardless of features
     let result = mcp_server.handle_tool_call("health_check", json!({})).await;
+    assert!(result.is_ok());
 
     // The result may be Ok or Err depending on mock state, but it should compile
     println!("Compilation test with current features passed: ✓");
@@ -327,6 +342,7 @@ async fn test_graceful_degradation() {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
 
     let brp_client = Arc::new(tokio::sync::RwLock::new(BrpClient::new(&config)));
@@ -444,8 +460,9 @@ async fn test_invalid_feature_combinations() {
     // Test with minimal configuration
     let config = Config {
         bevy_brp_host: "invalid.example.com".to_string(), // Invalid host
-        bevy_brp_port: 99999,                             // Invalid port
+        bevy_brp_port: 65535,
         mcp_port: 3001,
+        ..Config::default()
     };
 
     let brp_client = Arc::new(tokio::sync::RwLock::new(BrpClient::new(&config)));

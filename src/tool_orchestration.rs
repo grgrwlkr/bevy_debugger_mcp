@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -18,9 +19,11 @@ impl ExecutionId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
+}
 
-    pub fn to_string(&self) -> String {
-        self.0.to_string()
+impl fmt::Display for ExecutionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -293,6 +296,7 @@ pub struct ToolOrchestrator {
     /// Result cache
     result_cache: HashMap<String, ToolResult>,
     /// Dependency graph for execution ordering
+    #[allow(dead_code)]
     dependency_graph: DependencyGraph,
     /// BRP client for tool execution
     brp_client: Arc<RwLock<BrpClient>>,
@@ -415,7 +419,6 @@ impl ToolOrchestrator {
     ) -> Result<PipelineResult> {
         let start_time = Instant::now();
         let execution_id = ExecutionId::new();
-        let step_results;
 
         // Enforce execution bounds
         if pipeline.steps.len() > 100 {
@@ -447,7 +450,7 @@ impl ToolOrchestrator {
         })
         .await;
 
-        step_results = match pipeline_result {
+        let step_results = match pipeline_result {
             Ok(Ok(results)) => results,
             Ok(Err(e)) => return Err(e),
             Err(_) => {

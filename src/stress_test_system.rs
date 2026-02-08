@@ -170,7 +170,8 @@ impl CircuitBreaker {
         }
 
         // Check if timeout has passed
-        if let Some(last_failure) = *self.last_failure_time.read().await {
+        let last_failure = { *self.last_failure_time.read().await };
+        if let Some(last_failure) = last_failure {
             if last_failure.elapsed() > self.reset_timeout {
                 self.reset().await;
                 return false;
@@ -732,6 +733,7 @@ pub struct StressTestRunner {
     circuit_breaker: Arc<CircuitBreaker>,
     metrics: Arc<RwLock<PerformanceMetrics>>,
     ramp_up: bool,
+    #[allow(dead_code)]
     concurrent_limit: Arc<Semaphore>,
 }
 
@@ -996,7 +998,7 @@ mod tests {
         assert!(cb.is_open().await);
 
         // Wait for reset timeout
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        std::thread::sleep(Duration::from_millis(150));
         assert!(!cb.is_open().await);
     }
 

@@ -3,7 +3,7 @@
  * Tests for BEVDBG-004: Update BRP Protocol for Bevy 0.16
  */
 
-use bevy_debugger_mcp::brp_messages::{BrpRequest, BrpResponse, EntityWithGeneration, QueryFilter};
+use bevy_debugger_mcp::brp_messages::{BrpRequest, EntityWithGeneration, QueryFilter};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -179,7 +179,7 @@ async fn test_component_type_id_format_compatibility() {
 #[tokio::test]
 async fn test_json_rpc_2_0_format_compatibility() {
     // Test that requests can be formatted as proper JSON-RPC 2.0 messages
-    let query = BrpRequest::Query {
+    let _query = BrpRequest::Query {
         filter: {
             let mut filter = QueryFilter::default();
             filter.with = Some(vec!["Transform".to_string()]);

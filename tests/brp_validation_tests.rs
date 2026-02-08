@@ -7,10 +7,9 @@
 
 use bevy_debugger_mcp::brp_messages::{BrpRequest, QueryFilter};
 use bevy_debugger_mcp::brp_validation::{
-    BrpValidator, ComponentRegistry, ComponentTypeMetadata, EntityTracker, PermissionLevel,
-    ValidationConfig,
+    BrpValidator, ComponentRegistry, EntityTracker, PermissionLevel, ValidationConfig,
+    ValidationLimits,
 };
-use bevy_debugger_mcp::error::Error;
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
 
@@ -53,8 +52,10 @@ async fn test_request_size_limits() {
 
 #[tokio::test]
 async fn test_rate_limiting() {
-    let mut config = ValidationConfig::default();
-    config.rate_limit = 3; // Very low limit for testing
+    let config = ValidationConfig {
+        rate_limit: 3, // Very low limit for testing
+        ..Default::default()
+    };
     let validator = BrpValidator::with_config(config);
     let request = BrpRequest::ListComponents;
     let session_id = "rate_test_session";
@@ -82,8 +83,10 @@ async fn test_rate_limiting() {
 
 #[tokio::test]
 async fn test_rate_limiting_window_reset() {
-    let mut config = ValidationConfig::default();
-    config.rate_limit = 2;
+    let config = ValidationConfig {
+        rate_limit: 2,
+        ..Default::default()
+    };
     let validator = BrpValidator::with_config(config);
     let request = BrpRequest::ListComponents;
     let session_id = "window_test_session";
@@ -197,8 +200,10 @@ async fn test_permission_upgrade() {
 
 #[tokio::test]
 async fn test_entity_existence_validation() {
-    let mut config = ValidationConfig::default();
-    config.enforce_entity_existence = true;
+    let config = ValidationConfig {
+        enforce_entity_existence: true,
+        ..Default::default()
+    };
     let validator = BrpValidator::with_config(config);
     let session_id = "entity_test_session";
     let request_size = 100;
@@ -245,8 +250,11 @@ async fn test_entity_existence_validation() {
 
 #[tokio::test]
 async fn test_component_registry_validation() {
-    let mut config = ValidationConfig::default();
-    config.enforce_component_registry = true;
+    let config = ValidationConfig {
+        enforce_component_registry: true,
+        enforce_entity_existence: false,
+        ..Default::default()
+    };
     let validator = BrpValidator::with_config(config);
     let session_id = "component_test_session";
     let request_size = 100;
@@ -304,8 +312,13 @@ async fn test_component_registry_validation() {
 
 #[tokio::test]
 async fn test_component_value_size_limits() {
-    let mut config = ValidationConfig::default();
-    config.limits.max_component_value_size = 100; // Very small limit for testing
+    let config = ValidationConfig {
+        limits: ValidationLimits {
+            max_component_value_size: 100, // Very small limit for testing
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     let validator = BrpValidator::with_config(config);
     let session_id = "size_test_session";
     let request_size = 1000;
@@ -341,8 +354,10 @@ async fn test_component_value_size_limits() {
 
 #[tokio::test]
 async fn test_query_limits() {
-    let mut config = ValidationConfig::default();
-    config.max_entities_per_query = 5; // Very low limit for testing
+    let config = ValidationConfig {
+        max_entities_per_query: 5, // Very low limit for testing
+        ..Default::default()
+    };
     let validator = BrpValidator::with_config(config);
     let session_id = "query_limit_test_session";
     let request_size = 100;
@@ -389,13 +404,13 @@ async fn test_component_registry_operations() {
     let registry = ComponentRegistry::new();
 
     // Test default registered types
-    assert!(registry.is_registered(&"Transform".to_string()));
-    assert!(registry.is_registered(&"Name".to_string()));
-    assert!(registry.is_registered(&"Visibility".to_string()));
-    assert!(!registry.is_registered(&"CustomComponent".to_string()));
+    assert!(registry.is_registered("Transform"));
+    assert!(registry.is_registered("Name"));
+    assert!(registry.is_registered("Visibility"));
+    assert!(!registry.is_registered("CustomComponent"));
 
     // Test metadata retrieval
-    let transform_metadata = registry.get_metadata(&"Transform".to_string());
+    let transform_metadata = registry.get_metadata("Transform");
     assert!(transform_metadata.is_some());
 
     let metadata = transform_metadata.unwrap();
@@ -459,12 +474,13 @@ async fn test_session_management() {
 
 #[tokio::test]
 async fn test_error_message_quality() {
-    let validator = BrpValidator::new();
     let session_id = "error_test_session";
 
     // Test rate limit error message
-    let mut config = ValidationConfig::default();
-    config.rate_limit = 1;
+    let config = ValidationConfig {
+        rate_limit: 1,
+        ..Default::default()
+    };
     let validator = BrpValidator::with_config(config);
     let request = BrpRequest::ListComponents;
 
@@ -488,10 +504,12 @@ async fn test_error_message_quality() {
 
 #[tokio::test]
 async fn test_configuration_flexibility() {
-    let mut config = ValidationConfig::default();
-    config.enforce_entity_existence = false;
-    config.enforce_component_registry = false;
-    config.enforce_permissions = false;
+    let config = ValidationConfig {
+        enforce_entity_existence: false,
+        enforce_component_registry: false,
+        enforce_permissions: false,
+        ..Default::default()
+    };
 
     let validator = BrpValidator::with_config(config);
     let session_id = "flexible_config_session";

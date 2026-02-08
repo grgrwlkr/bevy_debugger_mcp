@@ -17,12 +17,11 @@
  */
 
 use async_trait::async_trait;
-use serde_json::json;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
 use crate::brp_command_handler::{BrpCommandHandler, CommandHandlerMetadata, CommandVersion};
-use crate::brp_messages::{BrpRequest, BrpResponse, DebugCommand, DebugResponse};
+use crate::brp_messages::{BrpRequest, BrpResponse};
 use crate::debug_command_processor::{DebugCommandRequest, DebugCommandRouter};
 use crate::error::Result;
 
@@ -122,7 +121,9 @@ impl BrpCommandHandler for DebugBrpHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::brp_messages::{DebugCommand, DebugResponse};
     use crate::debug_command_processor::DebugCommandProcessor;
+    use serde_json::json;
 
     struct MockDebugProcessor;
 

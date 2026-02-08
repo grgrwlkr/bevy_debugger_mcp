@@ -103,6 +103,7 @@ impl PlaybackSync for DirectSync {
 
 /// Interpolated sync strategy - interpolates between frames
 pub struct InterpolatedSync {
+    #[allow(dead_code)]
     interpolation_factor: f32,
 }
 
@@ -314,7 +315,7 @@ impl PlaybackController {
         }
 
         let mut timeline = self.timeline.write().await;
-        if let Some(frame) = timeline.next() {
+        if let Some(frame) = timeline.next_frame() {
             self.sync_strategy.sync_frame(&frame, brp_client).await?;
             *self.playback_time.write().await = frame.timestamp;
             debug!("Stepped to frame {}", frame.frame_number);
@@ -441,7 +442,7 @@ impl PlaybackController {
                                 }
 
                                 // Move to next frame
-                                if timeline.next().is_none() {
+                                if timeline.next_frame().is_none() {
                                     // End of recording
                                     *state.write().await = PlaybackState::Stopped;
                                     break;
@@ -489,7 +490,7 @@ impl PlaybackController {
 
         tokio::spawn(async move {
             let mut timeline = timeline.write().await;
-            while let Some(frame) = timeline.next() {
+            while let Some(frame) = timeline.next_frame() {
                 if tx.send(frame).await.is_err() {
                     break;
                 }

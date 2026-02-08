@@ -2,10 +2,8 @@
 ///
 /// This module contains tests that try to trigger panics in production code paths
 /// to ensure we've eliminated all unwrap() calls that could crash the application.
-use crate::brp_messages::{ComponentFilter, ComponentValue, DebugCommand, FilterOp, QueryFilter};
-use crate::checkpoint::{CheckpointConfig, CheckpointManager};
-use crate::config::Config;
-use crate::error::Result;
+use crate::brp_messages::ComponentValue;
+use crate::checkpoint::{Checkpoint, CheckpointConfig, CheckpointManager};
 use crate::memory_profiler::{MemoryProfiler, MemoryProfilerConfig};
 use crate::query_parser::{QueryParser, RegexQueryParser};
 use crate::semantic_analyzer::SemanticAnalyzer;
@@ -35,12 +33,12 @@ async fn test_memory_profiler_no_panic() {
         profiler.update_entity_count(usize::MAX / 1000);
 
         // Try snapshot with lots of data
-        if let Ok(_) = profiler.take_snapshot().await {
+        if profiler.take_snapshot().await.is_ok() {
             // Success
         }
 
         // Try leak detection
-        if let Ok(_) = profiler.detect_leaks().await {
+        if profiler.detect_leaks().await.is_ok() {
             // Success
         }
     }
@@ -54,20 +52,20 @@ async fn test_query_parser_no_panic() {
         Err(_) => return, // If constructor fails, that's expected
     };
 
-    let malformed_queries = vec![
-        "",                                                   // Empty
-        "|||||||||||",                                        // Invalid regex chars
-        "find entities with \0\0\0",                          // Null bytes
-        "find entities with ".repeat(1000),                   // Very long
-        "find entities with component Component".repeat(100), // Repetitive
-        "show entity 18446744073709551615",                   // Max u64
-        "show entity -1",                                     // Negative
-        "show entity abc",                                    // Non-numeric
-        "find 999999999999999999999999999999999999 entities", // Overflow number
+    let malformed_queries: Vec<String> = vec![
+        "".to_string(),                                                   // Empty
+        "|||||||||||".to_string(),                                        // Invalid regex chars
+        "find entities with \0\0\0".to_string(),                          // Null bytes
+        "find entities with ".repeat(1000),                               // Very long
+        "find entities with component Component".repeat(100),             // Repetitive
+        "show entity 18446744073709551615".to_string(),                   // Max u64
+        "show entity -1".to_string(),                                     // Negative
+        "show entity abc".to_string(),                                    // Non-numeric
+        "find 999999999999999999999999999999999999 entities".to_string(), // Overflow number
     ];
 
     for query in malformed_queries {
-        let _ = parser.parse(query); // Shouldn't panic, may return error
+        let _ = parser.parse(&query); // Shouldn't panic, may return error
     }
 }
 
@@ -79,11 +77,11 @@ async fn test_semantic_analyzer_no_panic() {
         Err(_) => return, // If constructor fails, that's expected
     };
 
-    let extreme_queries = vec![
+    let extreme_queries: Vec<String> = vec![
         "\0".repeat(10000),                 // Null bytes
         "🚀".repeat(1000),                  // Unicode
         "find".repeat(10000),               // Repetitive
-        "",                                 // Empty
+        "".to_string(),                     // Empty
         " ".repeat(10000),                  // Spaces
         "find stuck entities".repeat(1000), // Long valid query
     ];
@@ -97,24 +95,23 @@ async fn test_semantic_analyzer_no_panic() {
 #[tokio::test]
 async fn test_checkpoint_manager_no_panic() {
     let config = CheckpointConfig::default();
-    let manager = CheckpointManager::new(config);
+    let manager = Arc::new(CheckpointManager::new(config));
 
     // Try to create many checkpoints concurrently
     let mut handles = vec![];
     for i in 0..50 {
-        let manager_clone = Arc::new(&manager);
+        let manager_clone = Arc::clone(&manager);
         let handle = tokio::spawn(async move {
             for j in 0..10 {
                 let checkpoint_data = json!({"iteration": i * 10 + j});
-                let _ = manager_clone
-                    .create_checkpoint(
-                        &format!("test_checkpoint_{}", i * 10 + j),
-                        &format!("Test description {}", i * 10 + j),
-                        "test_operation",
-                        "test_component",
-                        checkpoint_data,
-                    )
-                    .await;
+                let checkpoint = Checkpoint::new(
+                    &format!("test_checkpoint_{}", i * 10 + j),
+                    &format!("Test description {}", i * 10 + j),
+                    "test_operation",
+                    "test_component",
+                    checkpoint_data,
+                );
+                let _ = manager_clone.create_checkpoint(checkpoint).await;
             }
         });
         handles.push(handle);
@@ -159,7 +156,7 @@ async fn test_state_diff_no_panic() {
         "Position".to_string(),
         ComponentValue::String("15,25,35".to_string()),
     );
-    components2.insert("Health".to_string(), ComponentValue::Number(100.0));
+    components2.insert("Health".to_string(), json!(100.0));
     // Note: Missing Velocity, adding Health - this tests our unwrap fixes
 
     let entity1 = crate::brp_messages::EntityData {
@@ -185,7 +182,7 @@ async fn test_state_diff_no_panic() {
 async fn test_random_stress_no_panic() {
     use rand::Rng;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Test various components with random data
     for _ in 0..100 {

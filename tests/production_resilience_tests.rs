@@ -5,19 +5,20 @@
  * Comprehensive stress testing for 99.9% uptime validation
  * Tests circuit breaker, connection pool, heartbeat, and retry mechanisms
  */
+#![allow(clippy::result_large_err)]
 
 // Use the original brp_client for now since BrpClientV2 depends on connection pool
 // which would require real WebSocket connections for full testing
 use bevy_debugger_mcp::brp_client::BrpClient;
-use bevy_debugger_mcp::brp_messages::{BrpRequest, BrpResponse, BrpResult};
-use bevy_debugger_mcp::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
-use bevy_debugger_mcp::config::{Config, ResilienceConfig};
+use bevy_debugger_mcp::brp_client_v2::BrpClientV2;
+use bevy_debugger_mcp::circuit_breaker::{CircuitBreaker, CircuitState};
+use bevy_debugger_mcp::config::{CircuitBreakerConfig, Config};
 use bevy_debugger_mcp::connection_pool::ConnectionPool;
 use bevy_debugger_mcp::error::Result;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 use tracing::{info, warn};
 
 /// Test configuration optimized for fast validation
@@ -79,7 +80,7 @@ async fn test_circuit_breaker_states_and_recovery() -> Result<()> {
 #[tokio::test]
 async fn test_connection_pool_concurrent_access() -> Result<()> {
     let config = create_test_config();
-    let mut pool = ConnectionPool::new(config);
+    let pool = ConnectionPool::new(config);
 
     // Note: This test would require a real BRP server to be fully functional
     // For now, we test the configuration and structure
@@ -94,7 +95,7 @@ async fn test_connection_pool_concurrent_access() -> Result<()> {
 #[tokio::test]
 async fn test_retry_backoff_timing() -> Result<()> {
     let config = create_test_config();
-    let client = BrpClientV2::new(config)?;
+    let _client = BrpClientV2::new(config)?;
 
     // Test backoff delay calculation
     let delay1 = Duration::from_millis(100); // initial_delay
@@ -273,7 +274,7 @@ async fn test_circuit_breaker_under_sustained_failures() -> Result<()> {
 #[tokio::test]
 async fn test_connection_pool_performance() -> Result<()> {
     let config = create_test_config();
-    let mut pool = ConnectionPool::new(config);
+    let pool = ConnectionPool::new(config);
 
     let start_time = Instant::now();
     let operations = 100;
@@ -437,6 +438,29 @@ async fn test_uptime_sla_simulation() -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
+async fn create_test_client_with_config(config: Config) -> Result<BrpClientV2> {
+    let client = BrpClientV2::new(config)?;
+    client.start().await?;
+    Ok(client)
+}
+
+#[allow(dead_code)]
+fn assert_metrics_reasonable(metrics: &bevy_debugger_mcp::brp_client_v2::BrpClientMetrics) {
+    // Sanity checks for metrics
+    assert!(metrics.total_requests >= metrics.successful_requests);
+    assert!(metrics.total_requests >= metrics.failed_requests);
+    assert_eq!(
+        metrics.total_requests,
+        metrics.successful_requests + metrics.failed_requests
+    );
+
+    if metrics.total_requests > 0 {
+        assert!(metrics.success_rate() <= 100.0);
+        assert!(metrics.success_rate() >= 0.0);
+    }
+}
+
 #[cfg(test)]
 mod integration_tests {
     use super::*;
@@ -457,28 +481,5 @@ mod integration_tests {
         warn!("End-to-end resilience test requires real BRP server - skipped");
 
         Ok(())
-    }
-}
-
-/// Utility functions for testing
-
-async fn create_test_client_with_config(config: Config) -> Result<BrpClientV2> {
-    let client = BrpClientV2::new(config)?;
-    client.start().await?;
-    Ok(client)
-}
-
-fn assert_metrics_reasonable(metrics: &bevy_debugger_mcp::brp_client_v2::BrpClientMetrics) {
-    // Sanity checks for metrics
-    assert!(metrics.total_requests >= metrics.successful_requests);
-    assert!(metrics.total_requests >= metrics.failed_requests);
-    assert_eq!(
-        metrics.total_requests,
-        metrics.successful_requests + metrics.failed_requests
-    );
-
-    if metrics.total_requests > 0 {
-        assert!(metrics.success_rate() <= 100.0);
-        assert!(metrics.success_rate() >= 0.0);
     }
 }

@@ -25,9 +25,7 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::brp_client::BrpClient;
 use crate::brp_messages::{BrpResponse, BrpResult, EntityData};
 use crate::error::{Error, Result};
-use crate::parallel_query_executor::{
-    ParallelExecutionConfig, ParallelQueryExecutor, QueryExecutionResult,
-};
+use crate::parallel_query_executor::{ParallelExecutionConfig, ParallelQueryExecutor};
 use crate::query_optimization::{QueryOptimizer, QueryPerformanceMetrics};
 use crate::query_parser::{QueryCache, QueryMetrics, QueryParser, RegexQueryParser};
 use crate::state_diff::{FuzzyCompareConfig, GameRules, StateDiff, StateDiffResult, StateSnapshot};
@@ -545,7 +543,6 @@ pub async fn clear_performance_data() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
 
     #[tokio::test]
     async fn test_optimized_observe_creation() {

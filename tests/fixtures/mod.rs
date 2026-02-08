@@ -1,13 +1,11 @@
+pub mod animated_test_game;
+pub mod complex_ecs_game;
+pub mod performance_test_game;
 /// Test game fixtures for E2E screenshot testing
-/// 
+///
 /// This module provides predictable Bevy game instances for testing
 /// the screenshot functionality in various scenarios.
-
 pub mod static_test_game;
-pub mod animated_test_game;
-
-pub use static_test_game::run_static_test_game;
-pub use animated_test_game::run_animated_test_game;
 
 use std::process::{Child, Command};
 use std::time::Duration;
@@ -15,6 +13,7 @@ use tokio::time::timeout;
 
 /// Configuration for test game instances
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TestGameConfig {
     /// Port for the BRP server
     pub brp_port: u16,
@@ -41,10 +40,12 @@ impl Default for TestGameConfig {
 }
 
 /// Test game launcher for E2E tests
+#[allow(dead_code)]
 pub struct TestGameLauncher {
     config: TestGameConfig,
 }
 
+#[allow(dead_code)]
 impl TestGameLauncher {
     pub fn new(config: TestGameConfig) -> Self {
         Self { config }
@@ -56,13 +57,18 @@ impl TestGameLauncher {
     }
 
     /// Launch an animated test game instance
-    pub async fn launch_animated_game(&self) -> Result<TestGameInstance, Box<dyn std::error::Error>> {
+    pub async fn launch_animated_game(
+        &self,
+    ) -> Result<TestGameInstance, Box<dyn std::error::Error>> {
         self.launch_game_binary("animated_test_game").await
     }
 
-    async fn launch_game_binary(&self, game_type: &str) -> Result<TestGameInstance, Box<dyn std::error::Error>> {
+    async fn launch_game_binary(
+        &self,
+        game_type: &str,
+    ) -> Result<TestGameInstance, Box<dyn std::error::Error>> {
         let mut cmd = Command::new("cargo");
-        cmd.args(&["run", "--bin", &format!("test_{}", game_type)])
+        cmd.args(["run", "--bin", &format!("test_{}", game_type)])
             .env("BEVY_BRP_PORT", self.config.brp_port.to_string())
             .env("BEVY_WINDOW_WIDTH", self.config.width.to_string())
             .env("BEVY_WINDOW_HEIGHT", self.config.height.to_string());
@@ -74,33 +80,27 @@ impl TestGameLauncher {
         let child = cmd.spawn()?;
 
         // Wait for the game to start up and begin accepting BRP connections
-        let startup_result = timeout(
-            self.config.startup_timeout,
-            self.wait_for_brp_connection()
-        ).await;
+        let startup_result =
+            timeout(self.config.startup_timeout, self.wait_for_brp_connection()).await;
 
         match startup_result {
-            Ok(Ok(())) => {
-                Ok(TestGameInstance {
-                    process: Some(child),
-                    brp_port: self.config.brp_port,
-                    config: self.config.clone(),
-                })
-            }
+            Ok(Ok(())) => Ok(TestGameInstance {
+                process: Some(child),
+                brp_port: self.config.brp_port,
+                config: self.config.clone(),
+            }),
             Ok(Err(e)) => {
                 // Kill the process if it started but BRP connection failed
                 if let Ok(mut child) = Command::new("pkill")
                     .arg("-f")
-                    .arg(&format!("test_{}", game_type))
+                    .arg(format!("test_{}", game_type))
                     .spawn()
                 {
                     let _ = child.wait();
                 }
                 Err(e)
             }
-            Err(_) => {
-                Err("Game startup timeout".into())
-            }
+            Err(_) => Err("Game startup timeout".into()),
         }
     }
 
@@ -131,6 +131,7 @@ impl TestGameLauncher {
 }
 
 /// A running test game instance
+#[allow(dead_code)]
 pub struct TestGameInstance {
     process: Option<Child>,
     pub brp_port: u16,
@@ -149,12 +150,10 @@ impl TestGameInstance {
             // Try graceful shutdown first
             #[cfg(unix)]
             {
-                use std::os::unix::process::ExitStatusExt;
                 use nix::sys::signal::{self, Signal};
                 use nix::unistd::Pid;
-
                 let pid = Pid::from_raw(child.id() as i32);
-                if let Err(_) = signal::kill(pid, Signal::SIGTERM) {
+                if signal::kill(pid, Signal::SIGTERM).is_err() {
                     // Fallback to force kill
                     let _ = child.kill();
                 }

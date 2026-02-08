@@ -199,8 +199,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_profiler_processor_creation() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = Arc::new(SystemProfiler::new(brp_client));
         let processor = SystemProfilerProcessor::new(profiler);
@@ -216,8 +218,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_validation() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = Arc::new(SystemProfiler::new(brp_client));
         let processor = SystemProfilerProcessor::new(profiler);
@@ -249,8 +253,10 @@ mod tests {
 
     #[test]
     fn test_processing_time_estimation() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let profiler = Arc::new(SystemProfiler::new(brp_client));
         let processor = SystemProfilerProcessor::new(profiler);

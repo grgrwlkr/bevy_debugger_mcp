@@ -24,7 +24,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, instrument, warn};
 
 use crate::brp_client::BrpClient;
 use crate::brp_messages::{BrpRequest, BrpResponse, BrpResult, EntityData, QueryFilter};
@@ -249,7 +249,7 @@ impl ParallelQueryExecutor {
         &self,
         batches: Vec<Vec<EntityData>>,
         filter: &Option<QueryFilter>,
-        brp_client: Arc<RwLock<BrpClient>>,
+        _brp_client: Arc<RwLock<BrpClient>>,
     ) -> Result<Vec<Vec<EntityData>>> {
         let filter = filter.clone();
         let thread_pool = self.thread_pool.clone();
@@ -341,13 +341,10 @@ impl ParallelQueryExecutor {
 
         match response {
             BrpResponse::Success(result) => {
-                let (entities, entity_count) = match *result {
-                    BrpResult::Entities(entities) => {
-                        let count = entities.len();
-                        (entities, count)
-                    }
-                    BrpResult::Entity(entity) => (vec![entity], 1),
-                    _ => (vec![], 0),
+                let entities = match *result {
+                    BrpResult::Entities(entities) => entities,
+                    BrpResult::Entity(entity) => vec![entity],
+                    _ => vec![],
                 };
 
                 self.create_sequential_result(entities, start_time)
@@ -499,7 +496,6 @@ impl QueryExecutionResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
 
     #[tokio::test]
     async fn test_parallel_executor_creation() {

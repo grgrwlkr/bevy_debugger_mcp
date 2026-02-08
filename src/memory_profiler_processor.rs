@@ -322,9 +322,7 @@ impl MemoryProfilerProcessor {
 
         Ok(DebugResponse::Success {
             message: "Memory profiler statistics retrieved successfully".to_string(),
-            data: Some(serde_json::Value::Object(
-                stats.into_iter().map(|(k, v)| (k, v)).collect(),
-            )),
+            data: Some(serde_json::Value::Object(stats.into_iter().collect())),
         })
     }
 
@@ -602,10 +600,12 @@ mod tests {
     use serde_json::json;
 
     async fn create_test_processor() -> MemoryProfilerProcessor {
-        let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
+        let config = Config {
+            bevy_brp_host: "localhost".to_string(),
+            bevy_brp_port: 15702,
+            mcp_port: 3000,
+            ..Config::default()
+        };
         let brp_client = Arc::new(RwLock::new(crate::brp_client::BrpClient::new(&config)));
         MemoryProfilerProcessor::new(brp_client)
     }

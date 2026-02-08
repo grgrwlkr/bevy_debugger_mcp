@@ -1,11 +1,12 @@
+#[cfg(feature = "pooling")]
+use criterion::Throughput;
 /// Comprehensive Optimization Benchmarks
 ///
 /// Specialized benchmarks for BEVDBG-012 performance optimizations,
 /// including comparative analysis and regression detection.
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use futures;
-use rand;
-use serde_json::{json, Value};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use futures_util::future;
+use serde_json::json;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
@@ -17,7 +18,7 @@ use bevy_debugger_mcp::{
 
 // Conditionally import optimization features
 #[cfg(feature = "caching")]
-use bevy_debugger_mcp::command_cache::{CacheConfig, CommandCache};
+use bevy_debugger_mcp::command_cache::{CacheConfig, CacheKey, CommandCache};
 
 #[cfg(feature = "pooling")]
 use bevy_debugger_mcp::response_pool::{ResponsePool, ResponsePoolConfig};
@@ -37,6 +38,7 @@ impl OptimizationBenchConfig {
             bevy_brp_host: "localhost".to_string(),
             bevy_brp_port: 15702,
             mcp_port: 3001,
+            ..Config::default()
         };
 
         // Baseline server without optimizations
@@ -63,6 +65,7 @@ fn benchmark_initialization_strategies(c: &mut Criterion) {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
 
@@ -73,13 +76,15 @@ fn benchmark_initialization_strategies(c: &mut Criterion) {
                 // Setup - create fresh lazy components each time
                 LazyComponents::new(brp_client.clone())
             },
-            |lazy_components| async {
+            |lazy_components| async move {
                 // Force immediate initialization of all components
                 let _entity_inspector = black_box(lazy_components.get_entity_inspector().await);
                 let _system_profiler = black_box(lazy_components.get_system_profiler().await);
-                let _memory_profiler = black_box(lazy_components.get_memory_profiler().await);
-                let _session_manager = black_box(lazy_components.get_session_manager().await);
-                let _visual_overlay = black_box(lazy_components.get_visual_debug_overlay().await);
+                let _memory_profiler =
+                    black_box(lazy_components.get_memory_profiler_processor().await);
+                let _session_processor = black_box(lazy_components.get_session_processor().await);
+                let _visual_overlay =
+                    black_box(lazy_components.get_visual_overlay_processor().await);
                 let _debug_router = black_box(lazy_components.get_debug_command_router().await);
             },
         );
@@ -89,7 +94,7 @@ fn benchmark_initialization_strategies(c: &mut Criterion) {
     c.bench_function("lazy_initialization", |b| {
         b.to_async(&bench_config.runtime).iter_with_setup(
             || LazyComponents::new(brp_client.clone()),
-            |lazy_components| async {
+            |lazy_components| async move {
                 // Only initialize the first component (most common case)
                 let _entity_inspector = black_box(lazy_components.get_entity_inspector().await);
             },
@@ -108,7 +113,7 @@ fn benchmark_initialization_strategies(c: &mut Criterion) {
                 });
                 lazy_components
             },
-            |lazy_components| async {
+            |lazy_components| async move {
                 // Access should be nearly instant
                 let _entity_inspector = black_box(lazy_components.get_entity_inspector().await);
             },
@@ -157,13 +162,18 @@ fn benchmark_caching_effectiveness(c: &mut Criterion) {
                         (fresh_cache, unique_tool, (*query_args).clone())
                     },
                     |(fresh_cache, tool_name, args)| async {
+                        let cache_key =
+                            CacheKey::new(&tool_name, &args).expect("Failed to build cache key");
                         // Simulate cache miss - first check cache, then "compute" result
-                        let cached_result = fresh_cache.get(&tool_name, &args).await;
+                        let cached_result = fresh_cache.get(&cache_key).await;
                         if cached_result.is_none() {
                             // Simulate computation time
                             tokio::time::sleep(Duration::from_micros(100)).await;
                             let result = json!({"computed": "result", "query": args});
-                            fresh_cache.set(&tool_name, &args, result.clone()).await;
+                            fresh_cache
+                                .put(&cache_key, result.clone(), vec![])
+                                .await
+                                .expect("Failed to cache response");
                             black_box(result)
                         } else {
                             black_box(cached_result.unwrap())
@@ -187,13 +197,18 @@ fn benchmark_caching_effectiveness(c: &mut Criterion) {
                         // Pre-populate cache
                         runtime.block_on(async {
                             let result = json!({"cached": "result", "query": query_args});
-                            cache.set(&tool_name, query_args, result).await;
+                            let cache_key = CacheKey::new(&tool_name, query_args)
+                                .expect("Failed to build cache key");
+                            cache
+                                .put(&cache_key, result, vec![])
+                                .await
+                                .expect("Failed to cache response");
                         });
-                        (tool_name, (*query_args).clone())
+                        CacheKey::new(&tool_name, query_args).expect("Failed to build cache key")
                     },
-                    |(tool_name, args)| async {
+                    |cache_key| async {
                         // Should be fast cache hit
-                        let result = black_box(cache.get(&tool_name, &args).await);
+                        let result = black_box(cache.get(&cache_key).await);
                         assert!(result.is_some(), "Cache should have hit");
                         result
                     },
@@ -400,7 +415,7 @@ fn benchmark_concurrent_performance(c: &mut Criterion) {
                         async move { server.handle_tool_call(operation, args).await }
                     });
 
-                    let results = futures::future::join_all(tasks).await;
+                    let results = future::join_all(tasks).await;
                     black_box(results)
                 });
             },
@@ -446,7 +461,7 @@ fn benchmark_memory_efficiency(c: &mut Criterion) {
             |b, (iteration_count, query_args)| {
                 b.to_async(&bench_config.runtime).iter(|| async {
                     // Simulate sustained load that could reveal memory issues
-                    for i in 0..iteration_count {
+                    for i in 0..*iteration_count {
                         let args = json!({
                             "query": query_args.get("query"),
                             "iteration": i,
@@ -478,10 +493,10 @@ fn benchmark_stress_degradation(c: &mut Criterion) {
 
     // Test how optimizations perform under increasing load
     let stress_levels = vec![
-        ("light_stress", 10, 10),   // 10 operations, 10ms intervals
-        ("medium_stress", 50, 5),   // 50 operations, 5ms intervals
-        ("heavy_stress", 100, 1),   // 100 operations, 1ms intervals
-        ("extreme_stress", 200, 0), // 200 operations, no delay
+        ("light_stress", 10_usize, 10_u64), // 10 operations, 10ms intervals
+        ("medium_stress", 50_usize, 5_u64), // 50 operations, 5ms intervals
+        ("heavy_stress", 100_usize, 1_u64), // 100 operations, 1ms intervals
+        ("extreme_stress", 200_usize, 0_u64), // 200 operations, no delay
     ];
 
     for (stress_name, op_count, delay_ms) in stress_levels {
@@ -492,7 +507,7 @@ fn benchmark_stress_degradation(c: &mut Criterion) {
                 b.to_async(&bench_config.runtime).iter(|| async {
                     let start_time = Instant::now();
 
-                    for i in 0..op_count {
+                    for i in 0..*op_count {
                         let operation = match i % 4 {
                             0 => "health_check",
                             1 => "resource_metrics",
@@ -510,8 +525,8 @@ fn benchmark_stress_degradation(c: &mut Criterion) {
                             .handle_tool_call(operation, args)
                             .await;
 
-                        if delay_ms > 0 {
-                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        if *delay_ms > 0 {
+                            tokio::time::sleep(Duration::from_millis(*delay_ms)).await;
                         }
                     }
 
@@ -553,7 +568,12 @@ fn benchmark_cache_pressure(c: &mut Criterion) {
                             let args = json!({"unique_id": i});
                             let response = json!({"result": format!("data_{}", i)});
 
-                            cache.set(&tool_name, &args, response).await;
+                            let cache_key = CacheKey::new(&tool_name, &args)
+                                .expect("Failed to build cache key");
+                            cache
+                                .put(&cache_key, response, vec![])
+                                .await
+                                .expect("Failed to cache response");
                         }
 
                         // Now test access patterns with evicted items
@@ -564,7 +584,9 @@ fn benchmark_cache_pressure(c: &mut Criterion) {
                             let tool_name = format!("tool_{}", i);
                             let args = json!({"unique_id": i});
 
-                            if cache.get(&tool_name, &args).await.is_some() {
+                            let cache_key = CacheKey::new(&tool_name, &args)
+                                .expect("Failed to build cache key");
+                            if cache.get(&cache_key).await.is_some() {
                                 hits += 1;
                             } else {
                                 misses += 1;
@@ -615,6 +637,7 @@ mod tests {
                 bevy_brp_host: "localhost".to_string(),
                 bevy_brp_port: 15702,
                 mcp_port: 3001,
+                ..Config::default()
             };
             let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
             McpServer::new(config, brp_client)
@@ -659,7 +682,7 @@ mod tests {
             }
         });
 
-        let concurrent_results = futures::future::join_all(concurrent_tasks).await;
+        let concurrent_results: Vec<Duration> = future::join_all(concurrent_tasks).await;
         let max_concurrent_duration = concurrent_results.iter().max().unwrap();
 
         println!(
@@ -684,6 +707,7 @@ mod tests {
                 bevy_brp_host: "localhost".to_string(),
                 bevy_brp_port: 15702,
                 mcp_port: 3001,
+                ..Config::default()
             };
             let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
             McpServer::new(config, brp_client)

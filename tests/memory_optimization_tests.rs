@@ -1,5 +1,4 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -9,16 +8,18 @@ use bevy_debugger_mcp::{
     lazy_init::{preload_critical_components, LazyComponents},
     mcp_server::McpServer,
     memory_optimization_tracker::{MemoryOptimizationTracker, OptimizationTarget},
-    memory_pools::{GameDebugPools, GAME_POOLS},
+    memory_pools::GAME_POOLS,
     semantic_analyzer::{SemanticAnalyzer, SemanticThresholds},
 };
 
 /// Benchmark memory usage of lazy initialization patterns
 async fn bench_lazy_initialization() {
-    let mut config = Config::default();
-    config.bevy_brp_host = "localhost".to_string();
-    config.bevy_brp_port = 15702;
-    config.mcp_port = 3001;
+    let config = Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3001,
+        ..Default::default()
+    };
 
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
     let components = LazyComponents::new(brp_client);
@@ -210,17 +211,18 @@ async fn test_memory_regression() {
     let stats = pools.get_pool_stats().await;
     stats.log_stats();
 
-    // Ensure pools are functioning
-    assert!(stats.total_pooled_objects() >= 0);
+    // Log pool stats for inspection
 }
 
 /// Integration test for complete memory optimization pipeline
 #[tokio::test]
 async fn test_memory_optimization_integration() {
-    let mut config = Config::default();
-    config.bevy_brp_host = "localhost".to_string();
-    config.bevy_brp_port = 15702;
-    config.mcp_port = 3001;
+    let config = Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3001,
+        ..Default::default()
+    };
 
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
 

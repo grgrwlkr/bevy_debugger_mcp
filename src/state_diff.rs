@@ -951,8 +951,10 @@ mod tests {
     #[test]
     fn test_game_rules_unexpected_changes() {
         let mut diff_engine = StateDiff::new();
-        let mut rules = GameRules::default();
-        rules.max_position_change_per_second = Some(10.0);
+        let rules = GameRules {
+            max_position_change_per_second: Some(10.0),
+            ..Default::default()
+        };
         diff_engine.set_game_rules(rules);
 
         let before = diff_engine.create_snapshot(vec![create_test_entity(
@@ -975,7 +977,7 @@ mod tests {
 
     #[test]
     fn test_change_grouping() {
-        let mut diff_engine = StateDiff::new();
+        let diff_engine = StateDiff::new();
 
         let changes = vec![
             Change::new(

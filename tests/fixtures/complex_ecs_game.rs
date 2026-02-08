@@ -1,20 +1,21 @@
+#![allow(dead_code)]
+#![allow(clippy::type_complexity)]
 /// Complex ECS Game Fixture
-/// 
+///
 /// A sophisticated Bevy game with advanced ECS patterns, complex systems,
 /// and realistic game mechanics for comprehensive debugging and optimization testing.
-
 use bevy::{
-    prelude::*,
-    remote::{RemotePlugin, BrpResult},
     app::AppExit,
-    window::WindowPlugin,
-    time::common_conditions::on_timer,
     diagnostic::{FrameTimeDiagnosticsPlugin, SystemInformationDiagnosticsPlugin},
-    ecs::system::SystemParam,
+    prelude::*,
+    remote::{BrpResult, RemotePlugin},
+    time::common_conditions::on_timer,
+    window::WindowPlugin,
 };
+use rand::Rng;
 use serde_json::Value;
-use std::time::Duration;
 use std::collections::HashMap;
+use std::time::Duration;
 
 /// Run the complex ECS test game
 pub fn run_complex_ecs_game() {
@@ -29,16 +30,19 @@ pub fn run_complex_ecs_game() {
             ..default()
         }))
         .add_plugins((
-            FrameTimeDiagnosticsPlugin,
+            FrameTimeDiagnosticsPlugin::default(),
             SystemInformationDiagnosticsPlugin,
         ))
         .add_plugins(
             RemotePlugin::default()
                 .with_method("bevy_debugger/query_entities", query_entities_handler)
                 .with_method("bevy_debugger/get_system_info", get_system_info)
-                .with_method("bevy_debugger/spawn_complex_entity", spawn_complex_entity_handler)
+                .with_method(
+                    "bevy_debugger/spawn_complex_entity",
+                    spawn_complex_entity_handler,
+                )
                 .with_method("bevy_debugger/run_simulation", run_simulation_handler)
-                .with_method("bevy_debugger/get_world_state", get_world_state_handler)
+                .with_method("bevy_debugger/get_world_state", get_world_state_handler),
         )
         .init_resource::<GameWorld>()
         .init_resource::<EconomyResource>()
@@ -48,34 +52,35 @@ pub fn run_complex_ecs_game() {
         .add_event::<TradeEvent>()
         .add_event::<MovementEvent>()
         .add_systems(Startup, setup_complex_world)
-        .add_systems(Update, (
-            // Core gameplay systems
-            ai_decision_system,
-            movement_system,
-            physics_system,
-            combat_system,
-            health_system,
-            economy_system,
-            relationship_system,
-            
-            // Management systems
-            lifecycle_system,
-            resource_management_system,
-            event_processing_system,
-            statistics_system,
-            
-            // Utility systems
-            auto_exit_system,
-        ))
-        .add_systems(Update, (
-            // Periodic systems
-            spawn_random_entities
-                .run_if(on_timer(Duration::from_secs(5))),
-            economy_update
-                .run_if(on_timer(Duration::from_secs(10))),
-            world_events_system
-                .run_if(on_timer(Duration::from_secs(15))),
-        ))
+        .add_systems(
+            Update,
+            (
+                // Core gameplay systems
+                ai_decision_system,
+                movement_system,
+                physics_system,
+                combat_system,
+                health_system,
+                economy_system,
+                relationship_system,
+                // Management systems
+                lifecycle_system,
+                resource_management_system,
+                event_processing_system,
+                statistics_system,
+                // Utility systems
+                auto_exit_system,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                // Periodic systems
+                spawn_random_entities.run_if(on_timer(Duration::from_secs(5))),
+                economy_update.run_if(on_timer(Duration::from_secs(10))),
+                world_events_system.run_if(on_timer(Duration::from_secs(15))),
+            ),
+        )
         .run();
 }
 
@@ -168,7 +173,7 @@ struct ComplexEntity {
     pub last_update: f32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum EntityClass {
     Warrior,
     Merchant,
@@ -318,7 +323,7 @@ fn setup_complex_world(
     economy.global_resources.insert("food".to_string(), 5000.0);
     economy.global_resources.insert("wood".to_string(), 8000.0);
     economy.global_resources.insert("stone".to_string(), 3000.0);
-    
+
     economy.market_prices.insert("gold".to_string(), 1.0);
     economy.market_prices.insert("food".to_string(), 2.5);
     economy.market_prices.insert("wood".to_string(), 1.8);
@@ -330,7 +335,10 @@ fn setup_complex_world(
     // Create resource nodes
     spawn_resource_nodes(&mut commands, &mut meshes, &mut materials);
 
-    info!("Complex ECS world initialized with {} entities", world.entities_spawned);
+    info!(
+        "Complex ECS world initialized with {} entities",
+        world.entities_spawned
+    );
 }
 
 /// Spawn a diverse population of entities
@@ -375,11 +383,7 @@ fn spawn_resource_nodes(
     ];
 
     for (i, (resource_type, color, amount)) in resource_types.iter().enumerate() {
-        let position = Vec3::new(
-            (i as f32 * 8.0 - 12.0),
-            0.0,
-            (i as f32 * 6.0 - 9.0),
-        );
+        let position = Vec3::new(i as f32 * 8.0 - 12.0, 0.0, i as f32 * 6.0 - 9.0);
 
         commands.spawn((
             Mesh3d(meshes.add(Cylinder::new(1.5, 0.5))),
@@ -517,7 +521,12 @@ fn spawn_complex_entity_of_class(
             range: 2.0,
             cooldown: 1.0,
             last_attack: 0.0,
-            weapon_type: inventory.items.keys().next().unwrap_or(&"fists".to_string()).clone(),
+            weapon_type: inventory
+                .items
+                .keys()
+                .next()
+                .unwrap_or(&"fists".to_string())
+                .clone(),
         },
         inventory,
         Economy {
@@ -590,7 +599,9 @@ fn ai_decision_system(
     let current_time = time.elapsed_secs();
     let decision_interval = 2.0 / config.ai_complexity; // More complex AI decides more frequently
 
-    for (entity, mut ai, mut position, health, inventory, economy, relationships) in query.iter_mut() {
+    for (_entity, mut ai, mut position, health, _inventory, economy, _relationships) in
+        query.iter_mut()
+    {
         if current_time - ai.last_decision_time < decision_interval {
             continue;
         }
@@ -714,28 +725,43 @@ fn combat_system(
 
     let current_time = time.elapsed_secs();
     let mut combatants: Vec<_> = query.iter_mut().collect();
+    let combatant_count = combatants.len();
 
-    for i in 0..combatants.len() {
-        let (attacker_entity, attacker_transform, _, mut attacker_combat, attacker_ai) = &mut combatants[i];
-        
-        if current_time - attacker_combat.last_attack < attacker_combat.cooldown {
-            continue;
-        }
-
+    for i in 0..combatant_count {
         // Find targets in range
-        for j in 0..combatants.len() {
+        for j in 0..combatant_count {
             if i == j {
                 continue;
             }
 
-            let (defender_entity, defender_transform, mut defender_health, _, defender_ai) = &mut combatants[j];
-            let distance = attacker_transform.translation.distance(defender_transform.translation);
+            let (attacker, defender) = if i < j {
+                let (left, right) = combatants.split_at_mut(j);
+                (&mut left[i], &mut right[0])
+            } else {
+                let (left, right) = combatants.split_at_mut(i);
+                (&mut right[0], &mut left[j])
+            };
+
+            let (attacker_entity, attacker_transform, _, attacker_combat, attacker_ai) = attacker;
+            let (defender_entity, defender_transform, defender_health, _, defender_ai) = defender;
+
+            if current_time - attacker_combat.last_attack < attacker_combat.cooldown {
+                continue;
+            }
+
+            let distance = attacker_transform
+                .translation
+                .distance(defender_transform.translation);
 
             if distance <= attacker_combat.range {
                 // Check if should attack based on AI behavior and relationships
                 let should_attack = match (&attacker_ai.behavior_type, &defender_ai.behavior_type) {
                     (BehaviorType::Aggressive, _) => true,
-                    (_, BehaviorType::Aggressive) if matches!(attacker_ai.behavior_type, BehaviorType::Defensive) => true,
+                    (_, BehaviorType::Aggressive)
+                        if matches!(attacker_ai.behavior_type, BehaviorType::Defensive) =>
+                    {
+                        true
+                    }
                     (BehaviorType::Trader, BehaviorType::Trader) => false, // Traders don't fight each other
                     _ => rand::random::<f32>() < 0.1, // 10% chance of random conflict
                 };
@@ -743,7 +769,9 @@ fn combat_system(
                 if should_attack && defender_health.current > 0.0 {
                     // Calculate damage
                     let base_damage = attacker_combat.attack_power;
-                    let damage_reduction = defender_health.current.min(attacker_combat.attack_power * 0.1);
+                    let damage_reduction = defender_health
+                        .current
+                        .min(attacker_combat.attack_power * 0.1);
                     let final_damage = (base_damage - damage_reduction).max(1.0);
 
                     // Apply damage
@@ -752,7 +780,7 @@ fn combat_system(
                     attacker_combat.last_attack = current_time;
 
                     // Record combat event
-                    combat_events.send(CombatEvent {
+                    combat_events.write(CombatEvent {
                         attacker: *attacker_entity,
                         defender: *defender_entity,
                         damage: final_damage,
@@ -773,18 +801,14 @@ fn combat_system(
 }
 
 /// Health system with regeneration and death handling
-fn health_system(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut Health, &mut Lifecycle)>,
-    time: Res<Time>,
-) {
+fn health_system(mut query: Query<(Entity, &mut Health, &mut Lifecycle)>, time: Res<Time>) {
     let current_time = time.elapsed_secs();
 
-    for (entity, mut health, mut lifecycle) in query.iter_mut() {
+    for (_entity, mut health, mut lifecycle) in query.iter_mut() {
         // Health regeneration
         if current_time - health.last_damage_time > 5.0 && health.current > 0.0 {
-            health.current = (health.current + health.regeneration_rate * time.delta_secs())
-                .min(health.maximum);
+            health.current =
+                (health.current + health.regeneration_rate * time.delta_secs()).min(health.maximum);
         }
 
         // Handle death
@@ -797,9 +821,15 @@ fn health_system(
 
 /// Economy system with trading and resource management
 fn economy_system(
-    mut query: Query<(Entity, &Transform, &mut Economy, &mut Inventory, &AIBehavior)>,
+    mut query: Query<(
+        Entity,
+        &Transform,
+        &mut Economy,
+        &mut Inventory,
+        &AIBehavior,
+    )>,
     mut trade_events: EventWriter<TradeEvent>,
-    mut economy_resource: ResMut<EconomyResource>,
+    economy_resource: Res<EconomyResource>,
     time: Res<Time>,
     config: Res<SimulationConfig>,
 ) {
@@ -807,31 +837,46 @@ fn economy_system(
         return;
     }
 
-    let traders: Vec<_> = query.iter_mut().collect();
-    
-    for i in 0..traders.len() {
-        let (trader_entity, trader_transform, mut trader_economy, mut trader_inventory, trader_ai) = &traders[i];
-        
-        if !matches!(trader_ai.behavior_type, BehaviorType::Trader) {
-            continue;
-        }
+    let mut traders: Vec<_> = query.iter_mut().collect();
+    let trader_count = traders.len();
 
+    for i in 0..trader_count {
         // Look for trade partners nearby
-        for j in 0..traders.len() {
+        for j in 0..trader_count {
             if i == j {
                 continue;
             }
 
-            let (partner_entity, partner_transform, mut partner_economy, mut partner_inventory, _) = &traders[j];
-            let distance = trader_transform.translation.distance(partner_transform.translation);
+            let (trader, partner) = if i < j {
+                let (left, right) = traders.split_at_mut(j);
+                (&mut left[i], &mut right[0])
+            } else {
+                let (left, right) = traders.split_at_mut(i);
+                (&mut right[0], &mut left[j])
+            };
+
+            let (trader_entity, trader_transform, trader_economy, trader_inventory, trader_ai) =
+                trader;
+            let (_partner_entity, partner_transform, _partner_economy, partner_inventory, _) =
+                partner;
+
+            if !matches!(trader_ai.behavior_type, BehaviorType::Trader) {
+                continue;
+            }
+
+            let distance = trader_transform
+                .translation
+                .distance(partner_transform.translation);
 
             if distance <= 3.0 && rand::random::<f32>() < 0.1 {
                 // Attempt trade
                 if let Some(trade_good) = trader_economy.preferred_goods.first().cloned() {
-                    if let Some(partner_amount) = partner_inventory.items.get(&trade_good).copied() {
+                    if let Some(partner_amount) = partner_inventory.items.get(&trade_good).copied()
+                    {
                         if partner_amount > 0.0 && trader_economy.wealth > 10.0 {
                             let trade_amount = (partner_amount * 0.1).min(10.0);
-                            let price = economy_resource.market_prices
+                            let price = economy_resource
+                                .market_prices
                                 .get(&trade_good)
                                 .copied()
                                 .unwrap_or(1.0);
@@ -841,14 +886,16 @@ fn economy_system(
                                 // Execute trade
                                 trader_economy.wealth -= total_cost;
                                 // partner_economy.wealth += total_cost; // Would need mutable access
-                                
+
                                 // Update inventories
-                                trader_inventory.items.entry(trade_good.clone())
+                                trader_inventory
+                                    .items
+                                    .entry(trade_good.clone())
                                     .and_modify(|amount| *amount += trade_amount)
                                     .or_insert(trade_amount);
-                                
+
                                 // Record trade
-                                trade_events.send(TradeEvent {
+                                trade_events.write(TradeEvent {
                                     trader: *trader_entity,
                                     resource: trade_good.clone(),
                                     amount: trade_amount,
@@ -875,12 +922,12 @@ fn economy_system(
 /// Relationship system for social interactions
 fn relationship_system(
     mut query: Query<(Entity, &Transform, &mut Relationships, &AIBehavior)>,
-    combat_events: EventReader<CombatEvent>,
-    trade_events: EventReader<TradeEvent>,
+    _combat_events: EventReader<CombatEvent>,
+    _trade_events: EventReader<TradeEvent>,
 ) {
     // Update relationships based on recent events
     // This would be more complex in a real game, but demonstrates the concept
-    for (entity, _transform, mut relationships, _ai) in query.iter_mut() {
+    for (_entity, _transform, mut relationships, _ai) in query.iter_mut() {
         // Decay relationships over time
         for (_other_entity, relationship_data) in relationships.relations.iter_mut() {
             relationship_data.trust *= 0.999;
@@ -914,22 +961,21 @@ fn lifecycle_system(
         }
 
         // Check for death conditions
-        let should_die = lifecycle.energy <= 0.0 
-            || lifecycle.max_age.map_or(false, |max_age| lifecycle.age >= max_age)
+        let should_die = lifecycle.energy <= 0.0
+            || lifecycle
+                .max_age
+                .is_some_and(|max_age| lifecycle.age >= max_age)
             || lifecycle.needs.values().any(|&need| need > 100.0);
 
         if should_die {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             world.entities_spawned = world.entities_spawned.saturating_sub(1);
         }
     }
 }
 
 /// Resource management system
-fn resource_management_system(
-    mut resource_query: Query<&mut ResourceNode>,
-    time: Res<Time>,
-) {
+fn resource_management_system(mut resource_query: Query<&mut ResourceNode>, time: Res<Time>) {
     for mut resource in resource_query.iter_mut() {
         // Regenerate resources
         if resource.amount < resource.max_amount {
@@ -972,7 +1018,8 @@ fn event_processing_system(
 
     // Keep only recent events
     if world.world_events.len() > 100 {
-        world.world_events.drain(0..world.world_events.len() - 100);
+        let drain_end = world.world_events.len() - 100;
+        world.world_events.drain(0..drain_end);
     }
 }
 
@@ -980,7 +1027,7 @@ fn event_processing_system(
 fn statistics_system(
     entity_query: Query<&ComplexEntity>,
     health_query: Query<&Health>,
-    combat_query: Query<&Combat>,
+    _combat_query: Query<&Combat>,
     economy_query: Query<&Economy>,
     mut world: ResMut<GameWorld>,
 ) {
@@ -989,13 +1036,12 @@ fn statistics_system(
 
     // Could collect more detailed statistics here
     // This demonstrates how complex queries can impact performance
-    let healthy_entities = health_query.iter()
+    let healthy_entities = health_query
+        .iter()
         .filter(|h| h.current > h.maximum * 0.5)
         .count();
-    
-    let wealthy_entities = economy_query.iter()
-        .filter(|e| e.wealth > 50.0)
-        .count();
+
+    let wealthy_entities = economy_query.iter().filter(|e| e.wealth > 50.0).count();
 
     if world.entities_spawned > 0 {
         debug!(
@@ -1017,7 +1063,7 @@ fn spawn_random_entities(
         return;
     }
 
-    let spawn_count = rand::random::<usize>() % 3 + 1; // 1-3 entities
+    let spawn_count = rand::rng().random_range(1..=3); // 1-3 entities
     let entity_classes = [
         EntityClass::Warrior,
         EntityClass::Merchant,
@@ -1025,12 +1071,13 @@ fn spawn_random_entities(
         EntityClass::Monster,
     ];
 
-    for i in 0..spawn_count {
+    for _i in 0..spawn_count {
         if world.entities_spawned >= config.max_entities {
             break;
         }
 
-        let entity_class = entity_classes[rand::random::<usize>() % entity_classes.len()].clone();
+        let entity_class =
+            entity_classes[rand::rng().random_range(0..entity_classes.len())].clone();
         spawn_complex_entity_of_class(
             &mut commands,
             &mut meshes,
@@ -1043,9 +1090,7 @@ fn spawn_random_entities(
 }
 
 /// Economy update system
-fn economy_update(
-    mut economy: ResMut<EconomyResource>,
-) {
+fn economy_update(mut economy: ResMut<EconomyResource>) {
     // Update market prices based on supply and demand
     for (_resource, price) in economy.market_prices.iter_mut() {
         *price *= 1.0 + (rand::random::<f32>() - 0.5) * 0.1; // ±5% price fluctuation
@@ -1057,10 +1102,7 @@ fn economy_update(
 }
 
 /// World events system
-fn world_events_system(
-    mut world: ResMut<GameWorld>,
-    query: Query<&ComplexEntity>,
-) {
+fn world_events_system(mut world: ResMut<GameWorld>, _query: Query<&ComplexEntity>) {
     // Generate random world events
     let event_types = [
         "A merchant caravan arrived",
@@ -1071,7 +1113,7 @@ fn world_events_system(
     ];
 
     if rand::random::<f32>() < 0.3 {
-        let event = event_types[rand::random::<usize>() % event_types.len()];
+        let event = event_types[rand::rng().random_range(0..event_types.len())];
         world.world_events.push(format!("World Event: {}", event));
     }
 }
@@ -1090,7 +1132,7 @@ fn auto_exit_system(
         t.tick(time.delta());
         if t.finished() {
             info!("Complex ECS game auto-exit timeout reached");
-            exit.send(AppExit::Success);
+            exit.write(AppExit::Success);
         }
     }
 }
@@ -1289,21 +1331,26 @@ fn get_world_state_handler(
     health_query: Query<&Health>,
     combat_stats: Res<CombatStats>,
 ) -> BrpResult {
-    let entity_classes: std::collections::HashMap<String, usize> = entity_query
-        .iter()
-        .fold(std::collections::HashMap::new(), |mut acc, entity| {
-            let class_name = format!("{:?}", entity.entity_class);
-            *acc.entry(class_name).or_insert(0) += 1;
-            acc
-        });
+    let entity_classes: std::collections::HashMap<String, usize> =
+        entity_query
+            .iter()
+            .fold(std::collections::HashMap::new(), |mut acc, entity| {
+                let class_name = format!("{:?}", entity.entity_class);
+                *acc.entry(class_name).or_insert(0) += 1;
+                acc
+            });
 
     let health_stats = health_query.iter().fold(
-        (0, 0.0, 0.0, 0.0),
+        (0, 0.0_f32, 0.0_f32, 0.0_f32),
         |(count, total, min, max), health| {
             (
                 count + 1,
                 total + health.current,
-                if count == 0 { health.current } else { min.min(health.current) },
+                if count == 0 {
+                    health.current
+                } else {
+                    min.min(health.current)
+                },
                 max.max(health.current),
             )
         },

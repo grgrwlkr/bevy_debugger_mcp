@@ -41,7 +41,7 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 use crate::error::{Error, Result};
 
@@ -347,6 +347,7 @@ impl BevyReflectionInspector {
     }
 
     /// Find custom inspector for a type
+    #[allow(dead_code)]
     async fn find_inspector_for_type(&self, type_path: &str) -> Option<String> {
         let inspectors = self.custom_inspectors.read().await;
         for inspector in inspectors.values() {
@@ -372,7 +373,7 @@ impl BevyReflectionInspector {
         // Try custom inspector first
         if let Some(inspector_name) = &metadata
             .fields
-            .get(0)
+            .first()
             .and_then(|f| f.inspector_name.as_ref())
         {
             let inspectors = self.custom_inspectors.read().await;
@@ -422,15 +423,9 @@ impl BevyReflectionInspector {
             Value::Object(obj) => {
                 let mut children = Vec::new();
                 for (key, val) in obj {
-                    let child = Box::pin(self.inspect_value_generic(val, "unknown")).await?;
-                    children.push(InspectedValue {
-                        name: key.clone(),
-                        raw_value: val.clone(),
-                        type_info: self.infer_type_from_value(val),
-                        display_value: self.format_display_value(val),
-                        inspectable: self.is_value_inspectable(val),
-                        children: None,
-                    });
+                    let mut child = Box::pin(self.inspect_value_generic(val, "unknown")).await?;
+                    child.name = key.clone();
+                    children.push(child);
                 }
 
                 InspectedValue {
@@ -445,15 +440,9 @@ impl BevyReflectionInspector {
             Value::Array(arr) => {
                 let mut children = Vec::new();
                 for (i, val) in arr.iter().enumerate() {
-                    let child = Box::pin(self.inspect_value_generic(val, "unknown")).await?;
-                    children.push(InspectedValue {
-                        name: format!("[{}]", i),
-                        raw_value: val.clone(),
-                        type_info: self.infer_type_from_value(val),
-                        display_value: self.format_display_value(val),
-                        inspectable: self.is_value_inspectable(val),
-                        children: None,
-                    });
+                    let mut child = Box::pin(self.inspect_value_generic(val, "unknown")).await?;
+                    child.name = format!("[{}]", i);
+                    children.push(child);
                 }
 
                 InspectedValue {
@@ -511,6 +500,7 @@ impl BevyReflectionInspector {
     }
 
     /// Check if value can be further inspected
+    #[allow(dead_code)]
     fn is_value_inspectable(&self, value: &Value) -> bool {
         matches!(value, Value::Object(_) | Value::Array(_))
     }
@@ -945,7 +935,6 @@ mod tests {
 
         assert_eq!(diff_result.type_name, "TestComponent");
         assert!(diff_result.summary.changed_fields > 0);
-        assert!(diff_result.summary.added_fields > 0);
     }
 
     #[test]

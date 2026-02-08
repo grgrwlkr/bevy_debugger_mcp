@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Mock MCP Client for Integration Testing
 ///
 /// This module provides a mock MCP client that simulates Claude Code interactions
@@ -46,7 +47,7 @@ struct SessionState {
 struct ToolCall {
     pub tool_name: String,
     pub arguments: Value,
-    pub response: Result<Value, String>,
+    pub response: std::result::Result<Value, String>,
     pub duration_ms: u128,
     pub timestamp: std::time::SystemTime,
 }
@@ -307,13 +308,12 @@ impl MockMcpClient {
                 .push(response.clone().err().unwrap());
         }
 
-        response.map_err(|e| Error::Validation(e))
+        response.map_err(Error::Validation)
     }
 
     /// Simulate a complete MCP conversation flow
     pub async fn simulate_debugging_session(&self) -> Result<DebugSessionReport> {
         let mut report = DebugSessionReport::default();
-        report.session_start = std::time::SystemTime::now();
 
         info!("Starting simulated debugging session");
 
@@ -432,13 +432,11 @@ impl MockMcpClient {
 
     /// Validate MCP protocol compliance
     pub async fn validate_protocol_compliance(&self) -> ProtocolCompliance {
-        let mut compliance = ProtocolCompliance::default();
-
         // Test initialize
-        compliance.supports_initialize = self.initialize().await.is_ok();
+        let supports_initialize = self.initialize().await.is_ok();
 
         // Test tools/list
-        compliance.supports_tools_list = self.list_tools().await.is_ok();
+        let supports_tools_list = self.list_tools().await.is_ok();
 
         // Test tools/call for each tool
         let mut working_tools = 0;
@@ -449,17 +447,21 @@ impl MockMcpClient {
             }
         }
 
-        compliance.tools_callable = working_tools;
-        compliance.total_tools = self.tools.len();
-        compliance.protocol_compliant =
-            compliance.supports_initialize && compliance.supports_tools_list && working_tools > 0;
+        let total_tools = self.tools.len();
+        let protocol_compliant = supports_initialize && supports_tools_list && working_tools > 0;
 
-        compliance
+        ProtocolCompliance {
+            supports_initialize,
+            supports_tools_list,
+            tools_callable: working_tools,
+            total_tools,
+            protocol_compliant,
+        }
     }
 }
 
 /// Report from a simulated debugging session
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct DebugSessionReport {
     pub session_start: std::time::SystemTime,
     pub session_end: Option<std::time::SystemTime>,
@@ -469,6 +471,21 @@ pub struct DebugSessionReport {
     pub available_tools_count: usize,
     pub successful_tool_calls: usize,
     pub failed_tool_calls: usize,
+}
+
+impl Default for DebugSessionReport {
+    fn default() -> Self {
+        Self {
+            session_start: std::time::SystemTime::now(),
+            session_end: None,
+            total_duration: Duration::default(),
+            initialization_successful: false,
+            tools_listed_successfully: false,
+            available_tools_count: 0,
+            successful_tool_calls: 0,
+            failed_tool_calls: 0,
+        }
+    }
 }
 
 /// Session statistics
@@ -500,8 +517,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_client_creation() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
 
         let client = MockMcpClient::new(config).await.unwrap();
         assert_eq!(client.tools.len(), 7); // Should have all 7 main tools
@@ -509,8 +528,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_initialize_flow() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
 
         let client = MockMcpClient::new(config).await.unwrap();
         let result = client.initialize().await.unwrap();
@@ -521,8 +542,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_tools_listing() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
 
         let client = MockMcpClient::new(config).await.unwrap();
         let result = client.list_tools().await.unwrap();
@@ -543,8 +566,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_debugging_session_simulation() {
-        let mut config = Config::default();
-        config.mcp_port = 3000;
+        let config = Config {
+            mcp_port: 3000,
+            ..Default::default()
+        };
 
         let client = MockMcpClient::new(config).await.unwrap();
         let report = client.simulate_debugging_session().await.unwrap();

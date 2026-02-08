@@ -20,7 +20,7 @@ use base64::Engine as _;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::env;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::error::{Error, Result};
 
@@ -219,12 +219,10 @@ impl ProductionSecurityConfig {
             }
         }
 
-        if self.password_blacklist_check {
-            if Self::is_common_password(password) {
-                return Err(Error::SecurityError(
-                    "Password is too common, please choose a more secure password".to_string(),
-                ));
-            }
+        if self.password_blacklist_check && Self::is_common_password(password) {
+            return Err(Error::SecurityError(
+                "Password is too common, please choose a more secure password".to_string(),
+            ));
         }
 
         Ok(())

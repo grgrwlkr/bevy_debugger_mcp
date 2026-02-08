@@ -10,10 +10,9 @@ use bevy_debugger_mcp::brp_client::BrpClient;
 use bevy_debugger_mcp::brp_messages::{DebugCommand, DebugResponse};
 use bevy_debugger_mcp::config::Config;
 use bevy_debugger_mcp::debug_command_processor::DebugCommandProcessor;
-use bevy_debugger_mcp::error::{Error, Result};
 use bevy_debugger_mcp::performance_budget::{
-    BudgetConfig, BudgetViolation, ComplianceReport, PerformanceBudgetMonitor, PerformanceMetrics,
-    Platform, ViolatedMetric, ViolationSeverity,
+    BudgetConfig, BudgetViolation, PerformanceBudgetMonitor, PerformanceMetrics, Platform,
+    ViolatedMetric, ViolationSeverity,
 };
 use bevy_debugger_mcp::performance_budget_processor::PerformanceBudgetProcessor;
 use chrono::Utc;
@@ -26,11 +25,12 @@ use tokio::time::sleep;
 
 /// Helper to create test configuration
 fn create_test_config() -> Config {
-    let mut config = Config::default();
-    config.bevy_brp_host = "localhost".to_string();
-    config.bevy_brp_port = 15702;
-    config.mcp_port = 3000;
-    config
+    Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Config::default()
+    }
 }
 
 /// Helper to create test budget monitor
@@ -145,8 +145,9 @@ async fn test_violation_severity_classification() {
             .iter()
             .find(|v| matches!(v.metric, ViolatedMetric::FrameTime))
         {
-            assert!(
-                matches!(violation.severity, expected_severity),
+            assert_eq!(
+                std::mem::discriminant(&violation.severity),
+                std::mem::discriminant(&expected_severity),
                 "Frame time {} should have severity {:?}",
                 frame_time,
                 expected_severity
@@ -259,11 +260,13 @@ async fn test_platform_detection() {
 
 #[tokio::test]
 async fn test_platform_specific_budgets() {
-    let mut config = BudgetConfig::default();
-    config.frame_time_ms = Some(16.67);
+    let mut config = BudgetConfig {
+        frame_time_ms: Some(16.67),
+        ..BudgetConfig::default()
+    };
 
     // Add platform-specific override
-    let mut override_config = bevy_debugger_mcp::performance_budget::PlatformBudgetOverride {
+    let override_config = bevy_debugger_mcp::performance_budget::PlatformBudgetOverride {
         frame_time_ms: Some(33.33), // 30 FPS for mobile
         memory_mb: Some(200.0),
         cpu_percent: Some(60.0),
@@ -278,12 +281,12 @@ async fn test_platform_specific_budgets() {
     monitor.start_monitoring().await.unwrap();
 
     // The current platform's budget should be applied
-    let current_config = monitor.get_config().await;
+    let _current_config = monitor.get_config().await;
 
     // If we're on mobile, the override should apply
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
-        assert_eq!(current_config.frame_time_ms, Some(33.33));
+        assert_eq!(_current_config.frame_time_ms, Some(33.33));
     }
 
     monitor.stop_monitoring().await.unwrap();
@@ -406,7 +409,7 @@ async fn test_processor_violation_checking() {
         } => {
             let violations: Vec<BudgetViolation> = serde_json::from_value(data).unwrap();
             // May or may not have violations depending on simulated metrics
-            assert!(violations.len() >= 0);
+            let _ = violations;
         }
         _ => panic!("Expected Success response with data"),
     }
@@ -590,9 +593,11 @@ async fn test_system_specific_budgets() {
 
 #[tokio::test]
 async fn test_auto_adjust_configuration() {
-    let mut config = BudgetConfig::default();
-    config.auto_adjust = true;
-    config.auto_adjust_percentile = 95.0;
+    let config = BudgetConfig {
+        auto_adjust: true,
+        auto_adjust_percentile: 95.0,
+        ..BudgetConfig::default()
+    };
 
     let monitor = PerformanceBudgetMonitor::new(config);
     monitor.start_monitoring().await.unwrap();

@@ -207,19 +207,21 @@ impl VisualDebugOverlay {
             ));
         }
 
-        let mut states = self.overlay_states.write().await;
+        {
+            let mut states = self.overlay_states.write().await;
 
-        let state = OverlayState {
-            enabled,
-            config: config.unwrap_or(serde_json::json!({})),
-            last_update_us: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_micros() as u64,
-            performance_impact_ms: 0.0,
-        };
+            let state = OverlayState {
+                enabled,
+                config: config.unwrap_or(serde_json::json!({})),
+                last_update_us: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_micros() as u64,
+                performance_impact_ms: 0.0,
+            };
 
-        states.insert(overlay_type.clone(), state);
+            states.insert(overlay_type.clone(), state);
+        }
 
         // Send update to Bevy
         self.sync_overlay_state(overlay_type).await?;
@@ -566,6 +568,7 @@ mod tests {
             bevy_brp_host: "localhost".to_string(),
             bevy_brp_port: 15702,
             mcp_port: 3000,
+            ..Config::default()
         };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let overlay = VisualDebugOverlay::new(brp_client);
@@ -583,6 +586,7 @@ mod tests {
             bevy_brp_host: "localhost".to_string(),
             bevy_brp_port: 15702,
             mcp_port: 3000,
+            ..Config::default()
         };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
         let overlay = VisualDebugOverlay::new(brp_client);
@@ -621,7 +625,7 @@ mod tests {
         tracker.update(&DebugOverlayType::ColliderVisualization, 0.8);
         tracker.update(&DebugOverlayType::PerformanceMetrics, 0.3);
 
-        assert_eq!(tracker.total_frame_time_ms, 1.6);
+        assert!((tracker.total_frame_time_ms - 1.6).abs() < 1e-6);
 
         // Test warning throttle
         assert!(tracker.should_warn());

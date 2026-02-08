@@ -13,13 +13,10 @@
 /// - End-to-end query building, validation, and execution workflow
 use bevy_debugger_mcp::{
     brp_client::BrpClient,
-    brp_messages::{ComponentFilter, DebugCommand, DebugResponse, FilterOp, QueryFilter},
+    brp_messages::{ComponentFilter, DebugCommand, DebugResponse, FilterOp},
     config::Config,
     debug_command_processor::{DebugCommandProcessor, DebugCommandRequest, DebugCommandRouter},
-    query_builder::{
-        QueryBuilder, QueryCostEstimator, QueryOptimizer, QueryValidator, MAX_COMPONENTS_PER_QUERY,
-        QUERY_PERFORMANCE_BUDGET_US,
-    },
+    query_builder::{QueryBuilder, MAX_COMPONENTS_PER_QUERY},
     query_builder_processor::QueryBuilderProcessor,
 };
 use serde_json::json;
@@ -30,12 +27,11 @@ use uuid::Uuid;
 
 /// Helper to create test configuration
 fn create_test_config() -> Config {
-    {
-        let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
-        config
+    Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Default::default()
     }
 }
 
@@ -351,7 +347,7 @@ async fn test_processor_validate_query() {
             valid,
             query,
             errors,
-            suggestions,
+            suggestions: _,
         } => {
             assert!(valid);
             assert!(query.is_some());
@@ -410,8 +406,8 @@ async fn test_processor_estimate_cost() {
     match result.unwrap() {
         DebugResponse::QueryCost {
             cost,
-            performance_budget_exceeded,
-            suggestions,
+            performance_budget_exceeded: _,
+            suggestions: _,
         } => {
             assert!(cost.estimated_entities > 0);
             assert!(cost.estimated_time_us > 0);

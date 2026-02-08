@@ -9,30 +9,18 @@ use crate::brp_client::BrpClient;
 use crate::brp_messages::DebugCommand;
 use crate::checkpoint::{CheckpointConfig, CheckpointManager};
 use crate::command_cache::{CacheConfig, CacheKey, CommandCache};
-use crate::compile_opts::{cold_path, inline_hot_path, CompileConfig};
 use crate::config::Config;
 use crate::dead_letter_queue::{DeadLetterConfig, DeadLetterQueue};
-use crate::debug_command_processor::{
-    DebugCommandRequest, DebugCommandRouter, DebugMetrics, EntityInspectionProcessor,
-};
+use crate::debug_command_processor::{DebugCommandRequest, DebugMetrics};
 use crate::diagnostics::{create_bug_report, DiagnosticCollector};
-use crate::entity_inspector::EntityInspector;
 use crate::error::{Error, ErrorContext, ErrorSeverity, Result};
-use crate::issue_detector_processor::IssueDetectorProcessor;
 use crate::lazy_init::{preload_critical_components, LazyComponents};
-use crate::memory_profiler_processor::MemoryProfilerProcessor;
-use crate::performance_budget_processor::PerformanceBudgetProcessor;
-use crate::profiling::{get_profiler, init_profiler, PerfMeasurement};
-use crate::query_builder_processor::QueryBuilderProcessor;
+use crate::profiling::{get_profiler, init_profiler};
 use crate::resource_manager::{ResourceConfig, ResourceManager};
 use crate::response_pool::{ResponsePool, ResponsePoolConfig};
-use crate::session_processor::SessionProcessor;
 use crate::suggestion_engine::{SuggestionContext, SystemState};
-use crate::system_profiler::SystemProfiler;
-use crate::system_profiler_processor::SystemProfilerProcessor;
 use crate::tool_orchestration::{ToolContext, ToolOrchestrator, ToolPipeline};
 use crate::tools::{anomaly, experiment, hypothesis, observe, orchestration, replay, stress};
-use crate::visual_debug_overlay_processor::VisualDebugOverlayProcessor;
 use crate::workflow_automation::UserPreferences;
 use crate::{profile_async_block, profile_block};
 
@@ -949,6 +937,12 @@ impl McpServer {
     /// Get cache tags for a tool to enable selective invalidation
     #[inline(always)]
     fn get_cache_tags_for_tool(&self, tool_name: &str) -> Vec<String> {
+        #[cfg(not(feature = "caching"))]
+        {
+            let _ = tool_name;
+            Vec::new()
+        }
+
         #[cfg(feature = "caching")]
         {
             // Pre-allocate common tag combinations to reduce allocations
@@ -969,12 +963,6 @@ impl McpServer {
                 "debug" => DEBUG_TAGS.iter().map(|s| s.to_string()).collect(),
                 _ => Vec::new(),
             }
-        }
-
-        #[cfg(not(feature = "caching"))]
-        {
-            // Zero-cost when caching is disabled
-            Vec::new()
         }
     }
 
@@ -1195,8 +1183,9 @@ impl McpServer {
             .to_string();
 
         // Extract user preferences if provided
-        let preferences = if let Some(prefs_data) = arguments.get("preferences") {
-            Some(UserPreferences {
+        let preferences = arguments
+            .get("preferences")
+            .map(|prefs_data| UserPreferences {
                 automation_enabled: prefs_data
                     .get("automation_enabled")
                     .and_then(|v| v.as_bool())
@@ -1216,10 +1205,7 @@ impl McpServer {
                     .get("auto_rollback")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true),
-            })
-        } else {
-            None
-        };
+            });
 
         let result = workflow_automation
             .execute_workflow(workflow_id, session_id, preferences)

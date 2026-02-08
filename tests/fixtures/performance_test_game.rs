@@ -1,16 +1,17 @@
+#![allow(dead_code)]
+#![allow(clippy::enum_variant_names)]
+#![allow(clippy::type_complexity)]
 /// Performance Test Game Fixture
-/// 
+///
 /// A specialized Bevy game designed to stress-test performance optimizations
 /// with realistic ECS patterns and entity management scenarios.
-
 use bevy::{
-    prelude::*,
-    remote::{RemotePlugin, BrpResult},
     app::AppExit,
-    window::WindowPlugin,
-    time::common_conditions::on_timer,
-    ecs::schedule::ScheduleLabel,
     diagnostic::{FrameTimeDiagnosticsPlugin, SystemInformationDiagnosticsPlugin},
+    prelude::*,
+    remote::{BrpResult, RemotePlugin},
+    time::common_conditions::on_timer,
+    window::WindowPlugin,
 };
 use serde_json::Value;
 use std::time::Duration;
@@ -28,7 +29,7 @@ pub fn run_performance_test_game() {
             ..default()
         }))
         .add_plugins((
-            FrameTimeDiagnosticsPlugin,
+            FrameTimeDiagnosticsPlugin::default(),
             SystemInformationDiagnosticsPlugin,
         ))
         .add_plugins(
@@ -36,26 +37,33 @@ pub fn run_performance_test_game() {
                 .with_method("bevy_debugger/get_entity_count", get_entity_count)
                 .with_method("bevy_debugger/spawn_entities", spawn_entities_handler)
                 .with_method("bevy_debugger/despawn_entities", despawn_entities_handler)
-                .with_method("bevy_debugger/get_performance_metrics", get_performance_metrics)
-                .with_method("bevy_debugger/stress_test", stress_test_handler)
+                .with_method(
+                    "bevy_debugger/get_performance_metrics",
+                    get_performance_metrics,
+                )
+                .with_method("bevy_debugger/stress_test", stress_test_handler),
         )
         .init_resource::<EntitySpawnConfig>()
         .init_resource::<PerformanceMetrics>()
         .add_systems(Startup, setup_performance_test_scene)
-        .add_systems(Update, (
-            update_performance_metrics,
-            entity_lifecycle_system,
-            movement_system,
-            collision_system,
-            cleanup_despawned_entities,
-            auto_exit_system,
-        ))
-        .add_systems(Update, (
-            spawn_entities_periodically
-                .run_if(on_timer(Duration::from_secs(2))),
-            update_entity_stats
-                .run_if(on_timer(Duration::from_millis(100))),
-        ))
+        .add_systems(
+            Update,
+            (
+                update_performance_metrics,
+                entity_lifecycle_system,
+                movement_system,
+                collision_system,
+                cleanup_despawned_entities,
+                auto_exit_system,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                spawn_entities_periodically.run_if(on_timer(Duration::from_secs(2))),
+                update_entity_stats.run_if(on_timer(Duration::from_millis(100))),
+            ),
+        )
         .run();
 }
 
@@ -95,9 +103,9 @@ struct PerformanceMetrics {
 /// Types of entities for testing different performance characteristics
 #[derive(Clone)]
 enum EntityType {
-    SimpleEntity,    // Minimal components for baseline testing
-    MovingEntity,    // Entities with movement for system stress testing
-    ComplexEntity,   // Entities with many components for memory testing
+    SimpleEntity,  // Minimal components for baseline testing
+    MovingEntity,  // Entities with movement for system stress testing
+    ComplexEntity, // Entities with many components for memory testing
 }
 
 /// Marker component for test entities
@@ -229,7 +237,7 @@ fn spawn_entity_of_type(
                 Transform::from_translation(position),
                 TestEntity {
                     entity_type: "simple".to_string(),
-                    created_at: 0.0, // Will be updated by system
+                    created_at: 0.0,      // Will be updated by system
                     lifetime: Some(30.0), // 30 second lifetime
                 },
                 Name::new(format!("SimpleEntity_{}", index)),
@@ -249,11 +257,7 @@ fn spawn_entity_of_type(
                     lifetime: Some(45.0),
                 },
                 Movement {
-                    velocity: Vec3::new(
-                        (index * 0.1).sin() * 2.0,
-                        0.0,
-                        (index * 0.1).cos() * 2.0,
-                    ),
+                    velocity: Vec3::new((index * 0.1).sin() * 2.0, 0.0, (index * 0.1).cos() * 2.0),
                     acceleration: Vec3::ZERO,
                     max_speed: 5.0,
                 },
@@ -321,7 +325,7 @@ fn spawn_entities_periodically(
     }
 
     let entities_to_spawn = (config.entities_per_wave).min(config.max_entities - current_count);
-    
+
     for i in 0..entities_to_spawn {
         let entity_type = config.entity_types[i % config.entity_types.len()].clone();
         spawn_entity_of_type(
@@ -334,7 +338,11 @@ fn spawn_entities_periodically(
     }
 
     if entities_to_spawn > 0 {
-        debug!("Spawned {} entities, total: {}", entities_to_spawn, current_count + entities_to_spawn);
+        debug!(
+            "Spawned {} entities, total: {}",
+            entities_to_spawn,
+            current_count + entities_to_spawn
+        );
     }
 }
 
@@ -345,7 +353,7 @@ fn entity_lifecycle_system(
     time: Res<Time>,
 ) {
     let current_time = time.elapsed_secs();
-    
+
     for (entity, mut test_entity) in query.iter_mut() {
         if test_entity.created_at == 0.0 {
             test_entity.created_at = current_time;
@@ -361,16 +369,14 @@ fn entity_lifecycle_system(
 }
 
 /// Movement system for moving entities
-fn movement_system(
-    mut query: Query<(&mut Transform, &mut Movement)>,
-    time: Res<Time>,
-) {
+fn movement_system(mut query: Query<(&mut Transform, &mut Movement)>, time: Res<Time>) {
     for (mut transform, mut movement) in query.iter_mut() {
         // Apply velocity
         transform.translation += movement.velocity * time.delta_secs();
 
         // Apply acceleration
-        movement.velocity += movement.acceleration * time.delta_secs();
+        let acceleration = movement.acceleration;
+        movement.velocity += acceleration * time.delta_secs();
 
         // Clamp to max speed
         if movement.velocity.length() > movement.max_speed {
@@ -390,19 +396,19 @@ fn movement_system(
 }
 
 /// Simple collision system for performance testing
-fn collision_system(
-    mut query: Query<(&Transform, &mut Health), (With<TestEntity>, With<Health>)>,
-) {
+fn collision_system(mut query: Query<(&Transform, &mut Health), (With<TestEntity>, With<Health>)>) {
     let mut combinations = query.iter_combinations_mut();
-    
-    while let Some([(transform_a, mut health_a), (transform_b, mut health_b)]) = combinations.fetch_next() {
+
+    while let Some([(transform_a, mut health_a), (transform_b, mut health_b)]) =
+        combinations.fetch_next()
+    {
         let distance = transform_a.translation.distance(transform_b.translation);
-        
+
         if distance < 1.0 {
             // Simple collision - reduce health
             health_a.current -= 0.1;
             health_b.current -= 0.1;
-            
+
             if health_a.current <= 0.0 {
                 health_a.current = 0.0;
             }
@@ -419,11 +425,11 @@ fn cleanup_despawned_entities(
     query: Query<Entity, With<ScheduledForDespawn>>,
 ) {
     let despawn_count = query.iter().count();
-    
+
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
-    
+
     if despawn_count > 0 {
         debug!("Despawned {} entities", despawn_count);
     }
@@ -457,7 +463,7 @@ fn update_entity_stats(
     let simple_count = simple_query.iter().count();
     let moving_count = moving_query.iter().count();
     let complex_count = complex_query.iter().count();
-    
+
     debug!(
         "Entity stats - Simple: {}, Moving: {}, Complex: {}, Total: {}",
         simple_count,
@@ -481,7 +487,7 @@ fn auto_exit_system(
         t.tick(time.delta());
         if t.finished() {
             info!("Performance test auto-exit timeout reached");
-            exit.send(AppExit::Success);
+            exit.write(AppExit::Success);
         }
     }
 }
@@ -489,12 +495,9 @@ fn auto_exit_system(
 // BRP Remote Method Handlers
 
 /// Get current entity count
-fn get_entity_count(
-    In(params): In<Option<Value>>,
-    query: Query<&TestEntity>,
-) -> BrpResult {
+fn get_entity_count(In(_params): In<Option<Value>>, query: Query<&TestEntity>) -> BrpResult {
     let total_count = query.iter().count();
-    
+
     let simple_count = query.iter().filter(|e| e.entity_type == "simple").count();
     let moving_count = query.iter().filter(|e| e.entity_type == "moving").count();
     let complex_count = query.iter().filter(|e| e.entity_type == "complex").count();
@@ -581,10 +584,10 @@ fn despawn_entities_handler(
                 continue;
             }
         }
-        
+
         commands.entity(entity).insert(ScheduledForDespawn);
         despawned += 1;
-        
+
         if despawned >= count {
             break;
         }
@@ -611,7 +614,7 @@ fn get_performance_metrics(
     };
 
     let current_entity_count = metrics.entity_counts.last().copied().unwrap_or(0);
-    
+
     Ok(serde_json::json!({
         "average_frame_time": avg_frame_time,
         "fps": if avg_frame_time > 0.0 { 1.0 / avg_frame_time } else { 0.0 },
@@ -663,7 +666,7 @@ fn stress_test_handler(
                     time.elapsed_secs() + i as f32,
                 );
             }
-            
+
             Ok(serde_json::json!({
                 "stress_test": "entity_spawn",
                 "entities_spawned": spawn_count,
@@ -675,7 +678,7 @@ fn stress_test_handler(
             spawn_config.entities_per_wave = intensity * 10;
             spawn_config.max_entities = intensity * 1000;
             spawn_config.spawn_enabled = true;
-            
+
             Ok(serde_json::json!({
                 "stress_test": "continuous_spawn",
                 "entities_per_wave": spawn_config.entities_per_wave,
@@ -684,12 +687,10 @@ fn stress_test_handler(
                 "success": true
             }))
         }
-        _ => {
-            Ok(serde_json::json!({
-                "error": "Unknown stress test type",
-                "available_types": ["entity_spawn", "continuous_spawn"],
-                "success": false
-            }))
-        }
+        _ => Ok(serde_json::json!({
+            "error": "Unknown stress test type",
+            "available_types": ["entity_spawn", "continuous_spawn"],
+            "success": false
+        })),
     }
 }

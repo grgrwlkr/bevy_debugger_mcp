@@ -4,6 +4,4 @@
 /// to enable comprehensive testing without external dependencies.
 pub mod mcp_client;
 
-pub use mcp_client::{
-    DebugSessionReport, MockMcpClient, ProtocolCompliance, SessionStats, ToolDefinition,
-};
+pub use mcp_client::MockMcpClient;

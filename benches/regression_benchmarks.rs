@@ -3,7 +3,8 @@
 /// Automated benchmarks to detect performance regressions in the
 /// BEVDBG-012 optimization implementation. These benchmarks establish
 /// baseline performance and can detect when optimizations regress.
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use futures_util::future;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,12 +16,13 @@ use bevy_debugger_mcp::{
 };
 
 #[cfg(feature = "caching")]
-use bevy_debugger_mcp::command_cache::{CacheConfig, CommandCache};
+use bevy_debugger_mcp::command_cache::{CacheConfig, CacheKey, CommandCache};
 
 #[cfg(feature = "pooling")]
 use bevy_debugger_mcp::response_pool::{ResponsePool, ResponsePoolConfig};
 
 /// Performance targets for regression detection
+#[allow(dead_code)]
 struct PerformanceTargets {
     health_check_max_ms: f64,
     resource_metrics_max_ms: f64,
@@ -68,7 +70,7 @@ impl PerformanceTargets {
 /// Configuration for regression benchmarks
 struct RegressionBenchConfig {
     runtime: Runtime,
-    server: McpServer,
+    server: Arc<McpServer>,
     targets: PerformanceTargets,
 }
 
@@ -79,9 +81,10 @@ impl RegressionBenchConfig {
             bevy_brp_host: "localhost".to_string(),
             bevy_brp_port: 15702,
             mcp_port: 3001,
+            ..Config::default()
         };
         let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
-        let server = McpServer::new(config, brp_client);
+        let server = Arc::new(McpServer::new(config, brp_client));
 
         // Use testing targets in CI, strict targets in benchmark mode
         let targets = if std::env::var("CI").is_ok() {
@@ -135,18 +138,19 @@ fn benchmark_mcp_operations_regression(c: &mut Criterion) {
 
     for (op_name, args, target_ms) in operations {
         c.bench_function(&format!("regression_mcp_{}", op_name), |b| {
-            b.to_async(&bench_config.runtime)
-                .iter_custom(|iters| async move {
+            let server = bench_config.server.clone();
+            let args = args.clone();
+            b.to_async(&bench_config.runtime).iter_custom(|iters| {
+                let server = server.clone();
+                let args = args.clone();
+                async move {
                     let mut total_time = Duration::ZERO;
                     let mut max_time = Duration::ZERO;
                     let mut times = Vec::new();
 
                     for _ in 0..iters {
                         let start = Instant::now();
-                        let _result = bench_config
-                            .server
-                            .handle_tool_call(op_name, args.clone())
-                            .await;
+                        let _result = server.handle_tool_call(op_name, args.clone()).await;
                         let elapsed = start.elapsed();
 
                         total_time += elapsed;
@@ -169,7 +173,8 @@ fn benchmark_mcp_operations_regression(c: &mut Criterion) {
                     }
 
                     total_time
-                });
+                }
+            });
         });
     }
 }
@@ -177,44 +182,50 @@ fn benchmark_mcp_operations_regression(c: &mut Criterion) {
 /// Lazy initialization regression tests
 fn benchmark_lazy_init_regression(c: &mut Criterion) {
     let bench_config = RegressionBenchConfig::new();
+    let target_ms = bench_config.targets.lazy_init_max_ms;
 
     let config = Config {
         bevy_brp_host: "localhost".to_string(),
         bevy_brp_port: 15702,
         mcp_port: 3001,
+        ..Config::default()
     };
     let brp_client = Arc::new(RwLock::new(BrpClient::new(&config)));
 
     c.bench_function("regression_lazy_init_first_access", |b| {
-        b.to_async(&bench_config.runtime).iter_custom(|iters| async move {
+        let brp_client = brp_client.clone();
+        b.to_async(&bench_config.runtime).iter_custom(|iters| {
+            let brp_client = brp_client.clone();
+            async move {
             let mut total_time = Duration::ZERO;
             let mut times = Vec::new();
-            
+
             for _ in 0..iters {
                 let lazy_components = LazyComponents::new(brp_client.clone());
-                
+
                 let start = Instant::now();
                 let _inspector = lazy_components.get_entity_inspector().await;
                 let elapsed = start.elapsed();
-                
+
                 total_time += elapsed;
                 times.push(elapsed);
             }
-            
+
             // Check regression
             times.sort_unstable();
             let p99_idx = ((times.len() as f64 * 0.99) as usize).min(times.len() - 1);
             let p99_time = times[p99_idx];
             let p99_ms = p99_time.as_millis() as f64;
-            
-            if p99_ms > bench_config.targets.lazy_init_max_ms {
+
+            if p99_ms > target_ms {
                 eprintln!(
                     "⚠️  PERFORMANCE REGRESSION DETECTED in lazy_init: P99 {:.2}ms > target {:.1}ms",
-                    p99_ms, bench_config.targets.lazy_init_max_ms
+                    p99_ms, target_ms
                 );
             }
-            
+
             total_time
+        }
         });
     });
 
@@ -230,7 +241,7 @@ fn benchmark_lazy_init_regression(c: &mut Criterion) {
                 });
                 components
             },
-            |components| async {
+            |components| async move {
                 let start = Instant::now();
                 let _inspector = components.get_entity_inspector().await;
                 let elapsed = start.elapsed();
@@ -267,14 +278,19 @@ fn benchmark_cache_regression(c: &mut Criterion) {
                 let response = json!({"cached": "result"});
 
                 runtime.block_on(async {
-                    cache.set(&tool_name, &args, response).await;
+                    let cache_key =
+                        CacheKey::new(&tool_name, &args).expect("Failed to build cache key");
+                    cache
+                        .put(&cache_key, response, vec![])
+                        .await
+                        .expect("Failed to cache response");
                 });
 
-                (tool_name, args)
+                CacheKey::new(&tool_name, &args).expect("Failed to build cache key")
             },
-            |(tool_name, args)| async {
+            |cache_key| async {
                 let start = Instant::now();
-                let _result = cache.get(&tool_name, &args).await;
+                let _result = cache.get(&cache_key).await;
                 let elapsed = start.elapsed();
 
                 // Check regression
@@ -302,16 +318,21 @@ fn benchmark_cache_regression(c: &mut Criterion) {
             },
             |(tool_name, args, response)| async {
                 let start = Instant::now();
-                
+
                 // Check for cache miss (should be None)
-                let cached = cache.get(&tool_name, &args).await;
+                let cache_key =
+                    CacheKey::new(&tool_name, &args).expect("Failed to build cache key");
+                let cached = cache.get(&cache_key).await;
                 assert!(cached.is_none(), "Should be cache miss");
-                
+
                 // Set new value
-                cache.set(&tool_name, &args, response).await;
-                
+                cache
+                    .put(&cache_key, response, vec![])
+                    .await
+                    .expect("Failed to cache response");
+
                 let elapsed = start.elapsed();
-                
+
                 // Check regression
                 let elapsed_ms = elapsed.as_millis() as f64;
                 if elapsed_ms > bench_config.targets.cache_miss_max_ms {
@@ -320,7 +341,7 @@ fn benchmark_cache_regression(c: &mut Criterion) {
                         elapsed_ms, bench_config.targets.cache_miss_max_ms
                     );
                 }
-                
+
                 black_box(elapsed)
             },
         );
@@ -346,12 +367,12 @@ fn benchmark_pooling_regression(c: &mut Criterion) {
     // Small response serialization
     c.bench_function("regression_pool_serialize_small", |b| {
         let small_response = json!({"status": "ok", "data": [1, 2, 3]});
-        
+
         b.to_async(&bench_config.runtime).iter(|| async {
             let start = Instant::now();
             let _result = pool.serialize_json(&small_response).await.unwrap();
             let elapsed = start.elapsed();
-            
+
             // Check regression
             let elapsed_us = elapsed.as_micros() as f64;
             if elapsed_us > bench_config.targets.pool_serialize_small_max_us {
@@ -360,7 +381,7 @@ fn benchmark_pooling_regression(c: &mut Criterion) {
                     elapsed_us, bench_config.targets.pool_serialize_small_max_us
                 );
             }
-            
+
             black_box(elapsed)
         });
     });
@@ -377,12 +398,12 @@ fn benchmark_pooling_regression(c: &mut Criterion) {
                 })).collect::<Vec<_>>()
             })).collect::<Vec<_>>()
         });
-        
+
         b.to_async(&bench_config.runtime).iter(|| async {
             let start = Instant::now();
             let _result = pool.serialize_json(&large_response).await.unwrap();
             let elapsed = start.elapsed();
-            
+
             // Check regression
             let elapsed_ms = elapsed.as_millis() as f64;
             if elapsed_ms > bench_config.targets.pool_serialize_large_max_ms {
@@ -391,7 +412,7 @@ fn benchmark_pooling_regression(c: &mut Criterion) {
                     elapsed_ms, bench_config.targets.pool_serialize_large_max_ms
                 );
             }
-            
+
             black_box(elapsed)
         });
     });
@@ -431,8 +452,10 @@ fn benchmark_memory_regression(c: &mut Criterion) {
 
     // Test that repeated operations don't leak memory
     c.bench_function("regression_memory_stability", |b| {
-        b.to_async(&bench_config.runtime)
-            .iter_custom(|iters| async move {
+        let server = bench_config.server.clone();
+        b.to_async(&bench_config.runtime).iter_custom(|iters| {
+            let server = server.clone();
+            async move {
                 let start_time = Instant::now();
 
                 // Perform operations that could potentially leak memory
@@ -442,7 +465,7 @@ fn benchmark_memory_regression(c: &mut Criterion) {
                         "iteration": i
                     });
 
-                    let _result = bench_config.server.handle_tool_call("observe", args).await;
+                    let _result = server.handle_tool_call("observe", args).await;
 
                     // Occasional cleanup hint
                     if i % 100 == 0 {
@@ -451,7 +474,8 @@ fn benchmark_memory_regression(c: &mut Criterion) {
                 }
 
                 start_time.elapsed()
-            });
+            }
+        });
     });
 }
 
@@ -461,15 +485,17 @@ fn benchmark_throughput_regression(c: &mut Criterion) {
 
     // Test sustained throughput doesn't regress
     c.bench_function("regression_sustained_throughput", |b| {
-        b.to_async(&bench_config.runtime)
-            .iter_custom(|iters| async move {
+        let server = bench_config.server.clone();
+        b.to_async(&bench_config.runtime).iter_custom(|iters| {
+            let server = server.clone();
+            async move {
                 let start_time = Instant::now();
                 let operations_per_batch = 10;
                 let batches = (iters / operations_per_batch as u64).max(1);
 
                 for batch in 0..batches {
                     let batch_tasks = (0..operations_per_batch).map(|i| {
-                        let server = &bench_config.server;
+                        let server = server.clone();
                         let op_id = batch * operations_per_batch as u64 + i as u64;
 
                         async move {
@@ -485,7 +511,7 @@ fn benchmark_throughput_regression(c: &mut Criterion) {
                         }
                     });
 
-                    let _results = futures::future::join_all(batch_tasks).await;
+                    let _results = future::join_all(batch_tasks).await;
                 }
 
                 let total_time = start_time.elapsed();
@@ -502,7 +528,8 @@ fn benchmark_throughput_regression(c: &mut Criterion) {
                 }
 
                 total_time
-            });
+            }
+        });
     });
 }
 
@@ -515,41 +542,45 @@ fn benchmark_concurrency_regression(c: &mut Criterion) {
 
     for &concurrency in &concurrency_levels {
         c.bench_function(&format!("regression_concurrency_{}", concurrency), |b| {
-            b.to_async(&bench_config.runtime).iter_custom(|iters| async move {
+            let server = bench_config.server.clone();
+            b.to_async(&bench_config.runtime).iter_custom(|iters| {
+                let server = server.clone();
+                async move {
                 let start_time = Instant::now();
                 let ops_per_worker = (iters / concurrency as u64).max(1);
-                
+
                 let worker_tasks = (0..concurrency).map(|worker_id| {
-                    let server = &bench_config.server;
-                    
+                    let server = server.clone();
+
                     async move {
                         for i in 0..ops_per_worker {
                             let args = json!({
                                 "worker_id": worker_id,
                                 "iteration": i
                             });
-                            
+
                             let _result = server.handle_tool_call("health_check", args).await;
                         }
                     }
                 });
-                
-                futures::future::join_all(worker_tasks).await;
-                
+
+                future::join_all(worker_tasks).await;
+
                 let total_time = start_time.elapsed();
-                
+
                 // Check that concurrency doesn't cause excessive slowdown
                 let ops_per_sec = (concurrency as u64 * ops_per_worker) as f64 / total_time.as_secs_f64();
                 let min_concurrent_throughput = 10.0; // ops/sec minimum under concurrency
-                
+
                 if ops_per_sec < min_concurrent_throughput {
                     eprintln!(
                         "⚠️  CONCURRENCY REGRESSION DETECTED at level {}: {:.1} ops/sec < {:.1} ops/sec",
                         concurrency, ops_per_sec, min_concurrent_throughput
                     );
                 }
-                
+
                 total_time
+            }
             });
         });
     }

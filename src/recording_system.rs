@@ -577,7 +577,7 @@ impl Timeline {
     }
 
     /// Move to next frame
-    pub fn next(&mut self) -> Option<Frame> {
+    pub fn next_frame(&mut self) -> Option<Frame> {
         if let Some(recording) = &self.recording {
             if self.current_frame + 1 < recording.total_frames {
                 self.current_frame += 1;

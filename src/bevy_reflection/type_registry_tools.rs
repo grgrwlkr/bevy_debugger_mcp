@@ -27,15 +27,14 @@ use bevy::prelude::*;
 use bevy::reflect::*;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use crate::bevy_reflection::inspector::{FieldMetadata, ReflectionMetadata, TypeCategory};
-use crate::error::{Error, Result};
+use crate::bevy_reflection::inspector::{ReflectionMetadata, TypeCategory};
+use crate::error::Result;
 
 /// TypeRegistry manager for dynamic component type discovery
 #[derive(Clone)]
@@ -340,6 +339,7 @@ impl TypeRegistryManager {
     }
 
     /// Find aliases for a type name
+    #[allow(dead_code)]
     async fn find_type_aliases(&self, type_name: &str) -> Vec<String> {
         let mut aliases = Vec::new();
 

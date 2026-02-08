@@ -1,9 +1,8 @@
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::sync::{Mutex, OnceCell, RwLock};
 use tracing::{debug, info};
 
 use crate::brp_client::BrpClient;
-use crate::config::Config;
 use crate::debug_command_processor::{DebugCommandRouter, EntityInspectionProcessor};
 use crate::entity_inspector::EntityInspector;
 use crate::error::Result;
@@ -131,18 +130,24 @@ impl LazyComponents {
             return Arc::clone(processor);
         }
 
-        let _guard = self.init_mutex.lock().await;
+        {
+            let _guard = self.init_mutex.lock().await;
 
-        // Double-check after acquiring lock
-        if let Some(processor) = self.entity_processor.get() {
-            return Arc::clone(processor);
+            // Double-check after acquiring lock
+            if let Some(processor) = self.entity_processor.get() {
+                return Arc::clone(processor);
+            }
         }
 
         debug!("Lazy initializing EntityInspectionProcessor");
         let inspector = self.get_entity_inspector().await;
         let processor = Arc::new(EntityInspectionProcessor::new(inspector));
 
-        let _ = self.entity_processor.set(Arc::clone(&processor));
+        if self.entity_processor.set(Arc::clone(&processor)).is_err() {
+            if let Some(existing) = self.entity_processor.get() {
+                return Arc::clone(existing);
+            }
+        }
 
         info!("EntityInspectionProcessor initialized lazily");
         processor
@@ -154,18 +159,24 @@ impl LazyComponents {
             return Arc::clone(processor);
         }
 
-        let _guard = self.init_mutex.lock().await;
+        {
+            let _guard = self.init_mutex.lock().await;
 
-        // Double-check after acquiring lock
-        if let Some(processor) = self.profiler_processor.get() {
-            return Arc::clone(processor);
+            // Double-check after acquiring lock
+            if let Some(processor) = self.profiler_processor.get() {
+                return Arc::clone(processor);
+            }
         }
 
         debug!("Lazy initializing SystemProfilerProcessor");
         let profiler = self.get_system_profiler().await;
         let processor = Arc::new(SystemProfilerProcessor::new(profiler));
 
-        let _ = self.profiler_processor.set(Arc::clone(&processor));
+        if self.profiler_processor.set(Arc::clone(&processor)).is_err() {
+            if let Some(existing) = self.profiler_processor.get() {
+                return Arc::clone(existing);
+            }
+        }
 
         info!("SystemProfilerProcessor initialized lazily");
         processor
@@ -258,7 +269,7 @@ impl LazyComponents {
         // Start session processor for background tasks with proper error handling
         // Use Weak reference to avoid circular dependency in the task
         let processor_weak = Arc::downgrade(&processor);
-        let task_handle = tokio::spawn(async move {
+        let _task_handle = tokio::spawn(async move {
             if let Some(processor_strong) = processor_weak.upgrade() {
                 if let Err(e) = processor_strong.start().await {
                     tracing::error!("Failed to start session processor: {}", e);
@@ -332,18 +343,19 @@ impl LazyComponents {
             return Arc::clone(router);
         }
 
-        let _guard = self.init_mutex.lock().await;
+        {
+            let _guard = self.init_mutex.lock().await;
 
-        // Double-check after acquiring lock
-        if let Some(router) = self.debug_command_router.get() {
-            return Arc::clone(router);
+            // Double-check after acquiring lock
+            if let Some(router) = self.debug_command_router.get() {
+                return Arc::clone(router);
+            }
         }
 
         debug!("Lazy initializing DebugCommandRouter");
         let router = Arc::new(DebugCommandRouter::new());
 
-        // Initialize processors synchronously to avoid race conditions
-        // This ensures the router is fully configured before being returned
+        // Initialize processors without holding init_mutex to avoid deadlocks
         let entity_processor = self.get_entity_processor().await;
         let profiler_processor = self.get_profiler_processor().await;
         let visual_overlay_processor = self.get_visual_overlay_processor().await;
@@ -384,7 +396,11 @@ impl LazyComponents {
 
         info!("Debug command router processors registered lazily");
 
-        let _ = self.debug_command_router.set(Arc::clone(&router));
+        if self.debug_command_router.set(Arc::clone(&router)).is_err() {
+            if let Some(existing) = self.debug_command_router.get() {
+                return Arc::clone(existing);
+            }
+        }
 
         info!("DebugCommandRouter initialized lazily");
         router
@@ -418,18 +434,24 @@ impl LazyComponents {
             return Arc::clone(engine);
         }
 
-        let _guard = self.init_mutex.lock().await;
+        {
+            let _guard = self.init_mutex.lock().await;
 
-        // Double-check after acquiring lock
-        if let Some(engine) = self.suggestion_engine.get() {
-            return Arc::clone(engine);
+            // Double-check after acquiring lock
+            if let Some(engine) = self.suggestion_engine.get() {
+                return Arc::clone(engine);
+            }
         }
 
         debug!("Lazy initializing SuggestionEngine");
         let pattern_system = self.get_pattern_learning_system().await;
         let engine = Arc::new(SuggestionEngine::new(pattern_system));
 
-        let _ = self.suggestion_engine.set(Arc::clone(&engine));
+        if self.suggestion_engine.set(Arc::clone(&engine)).is_err() {
+            if let Some(existing) = self.suggestion_engine.get() {
+                return Arc::clone(existing);
+            }
+        }
 
         info!("SuggestionEngine initialized lazily");
         engine
@@ -441,11 +463,13 @@ impl LazyComponents {
             return Arc::clone(automation);
         }
 
-        let _guard = self.init_mutex.lock().await;
+        {
+            let _guard = self.init_mutex.lock().await;
 
-        // Double-check after acquiring lock
-        if let Some(automation) = self.workflow_automation.get() {
-            return Arc::clone(automation);
+            // Double-check after acquiring lock
+            if let Some(automation) = self.workflow_automation.get() {
+                return Arc::clone(automation);
+            }
         }
 
         debug!("Lazy initializing WorkflowAutomation");
@@ -453,7 +477,15 @@ impl LazyComponents {
         let suggestion_engine = self.get_suggestion_engine().await;
         let automation = Arc::new(WorkflowAutomation::new(pattern_system, suggestion_engine));
 
-        let _ = self.workflow_automation.set(Arc::clone(&automation));
+        if self
+            .workflow_automation
+            .set(Arc::clone(&automation))
+            .is_err()
+        {
+            if let Some(existing) = self.workflow_automation.get() {
+                return Arc::clone(existing);
+            }
+        }
 
         info!("WorkflowAutomation initialized lazily");
         automation
@@ -465,11 +497,13 @@ impl LazyComponents {
             return Arc::clone(system);
         }
 
-        let _guard = self.init_mutex.lock().await;
+        {
+            let _guard = self.init_mutex.lock().await;
 
-        // Double-check after acquiring lock
-        if let Some(system) = self.hot_reload_system.get() {
-            return Arc::clone(system);
+            // Double-check after acquiring lock
+            if let Some(system) = self.hot_reload_system.get() {
+                return Arc::clone(system);
+            }
         }
 
         debug!("Lazy initializing HotReloadSystem");
@@ -495,7 +529,11 @@ impl LazyComponents {
             }
         });
 
-        let _ = self.hot_reload_system.set(Arc::clone(&system));
+        if self.hot_reload_system.set(Arc::clone(&system)).is_err() {
+            if let Some(existing) = self.hot_reload_system.get() {
+                return Arc::clone(existing);
+            }
+        }
 
         info!("HotReloadSystem initialized lazily");
         system

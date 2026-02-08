@@ -6,10 +6,10 @@
  */
 
 use bevy_debugger_mcp::{brp_client::BrpClient, config::Config, mcp_tools::BevyDebuggerTools};
-use rmcp::{handler::server::ServerHandler, model::*};
+use rmcp::model::*;
+use rmcp::Service;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio_test;
 
 /// Test that BevyDebuggerTools implements ServerHandler correctly
 #[tokio::test]
@@ -23,7 +23,7 @@ async fn test_server_handler_implementation() {
 
     assert_eq!(server_info.protocol_version, ProtocolVersion::V_2024_11_05);
     assert_eq!(server_info.server_info.name, "bevy-debugger-mcp");
-    assert!(server_info.server_info.version.len() > 0);
+    assert!(!server_info.server_info.version.is_empty());
     assert!(server_info.capabilities.tools.is_some());
     assert!(server_info.instructions.is_some());
     assert!(server_info
@@ -58,7 +58,6 @@ async fn test_error_handling() {
     let _server_info = tools.get_info();
 
     // If we get here, the rmcp 0.2.1 API compatibility is working
-    assert!(true);
 }
 
 /// Test ServerHandler trait methods are properly implemented
@@ -86,19 +85,6 @@ async fn test_server_handler_traits() {
 #[tokio::test]
 async fn test_tool_schema_generation() {
     // TODO: Add schemars dependency if schema validation is needed
-    // use schemars::JsonSchema;
-    use bevy_debugger_mcp::mcp_tools::{ExperimentRequest, HypothesisRequest, ObserveRequest};
-
-    // Test that our request structures can be created (basic structure validation)
-    // let observe_schema = schemars::schema_for!(ObserveRequest);
-    // assert!(observe_schema.schema.object.is_some());
-
-    // let experiment_schema = schemars::schema_for!(ExperimentRequest);
-    // assert!(experiment_schema.schema.object.is_some());
-
-    // let hypothesis_schema = schemars::schema_for!(HypothesisRequest);
-    // assert!(hypothesis_schema.schema.object.is_some());
-
-    // For now, just verify we can reference the types
+    // For now, just note that schema validation is disabled
     println!("Schema validation tests disabled - schemars dependency not available");
 }

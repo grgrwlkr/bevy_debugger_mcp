@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::time::SystemTime;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -19,9 +20,11 @@ impl BranchId {
     pub fn from_string(s: &str) -> Result<Self> {
         Ok(Self(Uuid::parse_str(s)?))
     }
+}
 
-    pub fn to_string(&self) -> String {
-        self.0.to_string()
+impl fmt::Display for BranchId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -255,6 +258,7 @@ pub struct TimelineBranchManager {
     /// Maximum number of branches to keep
     max_branches: usize,
     /// Maximum number of modification layers per branch
+    #[allow(dead_code)]
     max_modifications_per_branch: usize,
     /// Currently active branch for playback
     active_branch_id: Option<BranchId>,
@@ -314,7 +318,7 @@ impl TimelineBranchManager {
             if !self.branches.contains_key(&parent) {
                 return Err(Error::Validation(format!(
                     "Parent branch {} not found",
-                    parent.to_string()
+                    parent
                 )));
             }
 
@@ -335,8 +339,7 @@ impl TimelineBranchManager {
 
         info!(
             "Created branch {} at frame {}",
-            branch_id.to_string(),
-            branch_point_frame
+            branch_id, branch_point_frame
         );
         Ok(branch_id)
     }
@@ -372,9 +375,10 @@ impl TimelineBranchManager {
             })?;
 
         // Apply branch modifications
-        let branch = self.branches.get_mut(&branch_id).ok_or_else(|| {
-            Error::Validation(format!("Branch {} not found", branch_id.to_string()))
-        })?;
+        let branch = self
+            .branches
+            .get_mut(&branch_id)
+            .ok_or_else(|| Error::Validation(format!("Branch {} not found", branch_id)))?;
 
         branch.get_frame(base_frame, frame_number)
     }
@@ -382,14 +386,11 @@ impl TimelineBranchManager {
     /// Set the active branch for playback
     pub fn set_active_branch(&mut self, branch_id: BranchId) -> Result<()> {
         if !self.branches.contains_key(&branch_id) {
-            return Err(Error::Validation(format!(
-                "Branch {} not found",
-                branch_id.to_string()
-            )));
+            return Err(Error::Validation(format!("Branch {} not found", branch_id)));
         }
 
         self.active_branch_id = Some(branch_id);
-        info!("Set active branch to {}", branch_id.to_string());
+        info!("Set active branch to {}", branch_id);
         Ok(())
     }
 
@@ -399,6 +400,7 @@ impl TimelineBranchManager {
     }
 
     /// Check if creating a branch would create a circular dependency
+    #[allow(dead_code)]
     fn would_create_cycle(
         &self,
         potential_parent: BranchId,
@@ -454,7 +456,7 @@ impl TimelineBranchManager {
         self.branches.remove(&branch_id);
         self.branch_refs.remove(&branch_id);
 
-        info!("Deleted branch {}", branch_id.to_string());
+        info!("Deleted branch {}", branch_id);
         Ok(())
     }
 
@@ -478,9 +480,10 @@ impl TimelineBranchManager {
         branch_id: BranchId,
         strategy: MergeStrategy,
     ) -> Result<Vec<ConflictResolution>> {
-        let branch = self.branches.get(&branch_id).ok_or_else(|| {
-            Error::Validation(format!("Branch {} not found", branch_id.to_string()))
-        })?;
+        let branch = self
+            .branches
+            .get(&branch_id)
+            .ok_or_else(|| Error::Validation(format!("Branch {} not found", branch_id)))?;
 
         let parent_id = branch
             .metadata
@@ -506,11 +509,7 @@ impl TimelineBranchManager {
         // Delete the merged branch
         self.delete_branch(branch_id)?;
 
-        info!(
-            "Merged branch {} into {}",
-            branch_id.to_string(),
-            parent_id.to_string()
-        );
+        info!("Merged branch {} into {}", branch_id, parent_id);
         Ok(resolutions)
     }
 
@@ -556,7 +555,7 @@ impl TimelineBranchManager {
         for branch_id in to_remove {
             self.branches.remove(&branch_id);
             self.branch_refs.remove(&branch_id);
-            warn!("Garbage collected branch {}", branch_id.to_string());
+            warn!("Garbage collected branch {}", branch_id);
         }
     }
 
@@ -846,7 +845,7 @@ mod tests {
             new_value: serde_json::json!(100),
         });
 
-        branch.add_modification_layer(layer);
+        let _ = branch.add_modification_layer(layer);
 
         assert!(branch.has_modifications_at(0));
         assert!(!branch.has_modifications_at(1));

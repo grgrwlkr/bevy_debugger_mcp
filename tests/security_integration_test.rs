@@ -30,11 +30,13 @@ use bevy_debugger_mcp::{
 
 /// Create a test security manager
 async fn create_test_security_manager() -> Arc<SecurityManager> {
-    let mut config = SecurityConfig::default();
-    config.jwt_secret = "test_secret_for_testing_only".to_string();
-    config.jwt_expiry_hours = 1;
-    config.password_min_length = 4;
-    config.rate_limit_per_ip = 1000; // High limit for tests
+    let config = SecurityConfig {
+        jwt_secret: "test_secret_for_testing_only".to_string(),
+        jwt_expiry_hours: 1,
+        password_min_length: 4,
+        rate_limit_per_ip: 1000, // High limit for tests
+        ..SecurityConfig::default()
+    };
 
     Arc::new(SecurityManager::new(config).expect("Failed to create security manager"))
 }
@@ -230,10 +232,10 @@ async fn test_user_management() {
 async fn test_secure_tool_authentication() {
     let security_manager = create_test_security_manager().await;
     let brp_client = create_test_brp_client();
-    let secure_tools = SecureMcpTools::new(brp_client, security_manager.clone());
+    let _secure_tools = SecureMcpTools::new(brp_client, security_manager.clone());
 
     // Test authentication tool
-    let auth_params = json!({
+    let _auth_params = json!({
         "username": "admin",
         "password": "admin123"
     });
@@ -289,10 +291,12 @@ async fn test_password_security() {
 
 #[tokio::test]
 async fn test_failed_login_tracking() {
-    let mut config = SecurityConfig::default();
-    config.max_failed_logins = 3;
-    config.lockout_duration_minutes = 1;
-    config.jwt_secret = "test_secret".to_string();
+    let config = SecurityConfig {
+        max_failed_logins: 3,
+        lockout_duration_minutes: 1,
+        jwt_secret: "test_secret".to_string(),
+        ..SecurityConfig::default()
+    };
 
     let security_manager =
         Arc::new(SecurityManager::new(config).expect("Failed to create security manager"));
@@ -387,9 +391,11 @@ async fn test_security_vulnerability_scan() {
 
 #[tokio::test]
 async fn test_session_cleanup() {
-    let mut config = SecurityConfig::default();
-    config.session_timeout_hours = 0; // Immediate expiry for testing
-    config.jwt_secret = "test_secret".to_string();
+    let config = SecurityConfig {
+        session_timeout_hours: 0, // Immediate expiry for testing
+        jwt_secret: "test_secret".to_string(),
+        ..SecurityConfig::default()
+    };
 
     let security_manager =
         Arc::new(SecurityManager::new(config).expect("Failed to create security manager"));
@@ -405,7 +411,7 @@ async fn test_session_cleanup() {
 
     // Session should be cleaned up, but token might still be valid until JWT expiry
     // This test verifies the cleanup mechanism runs without errors
-    let claims = security_manager.validate_token(&token).await;
+    let _claims = security_manager.validate_token(&token).await;
     // The result depends on JWT vs session expiry - both are valid behaviors
 }
 
@@ -450,10 +456,12 @@ async fn test_penetration_scenarios() {
 /// Test rate limiting functionality
 #[tokio::test]
 async fn test_rate_limiting() {
-    let mut config = SecurityConfig::default();
-    config.rate_limit_requests_per_minute = 2;
-    config.rate_limit_burst = 2;
-    config.jwt_secret = "test_secret".to_string();
+    let config = SecurityConfig {
+        rate_limit_per_ip: 2,
+        rate_limit_burst: 2,
+        jwt_secret: "test_secret".to_string(),
+        ..SecurityConfig::default()
+    };
 
     let security_manager =
         Arc::new(SecurityManager::new(config).expect("Failed to create security manager"));

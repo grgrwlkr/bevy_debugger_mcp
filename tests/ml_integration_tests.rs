@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 /*
  * Bevy Debugger MCP Server - Machine Learning Integration Tests
  * Copyright (C) 2025 ladvien
@@ -16,6 +17,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -194,8 +196,7 @@ async fn test_workflow_automation_end_to_end() -> Result<()> {
 /// Test hot reload system functionality
 #[tokio::test]
 async fn test_hot_reload_system() -> Result<()> {
-    let temp_dir =
-        TempDir::new().map_err(|e| bevy_debugger_mcp::error::Error::Io(e.to_string()))?;
+    let temp_dir = TempDir::new().map_err(bevy_debugger_mcp::error::Error::Io)?;
     let watch_dir = temp_dir.path().to_path_buf();
 
     let pattern_system = Arc::new(PatternLearningSystem::new());
@@ -235,7 +236,7 @@ async fn test_hot_reload_system() -> Result<()> {
     let test_patterns = r#"[]"#; // Empty patterns array
     tokio::fs::write(&patterns_file, test_patterns)
         .await
-        .map_err(|e| bevy_debugger_mcp::error::Error::Io(e.to_string()))?;
+        .map_err(bevy_debugger_mcp::error::Error::Io)?;
 
     // Give time for file watcher to detect and process
     sleep(Duration::from_millis(500)).await;
@@ -284,8 +285,9 @@ async fn test_pattern_learning_integration() -> Result<()> {
         ),
         (
             DebugCommand::ProfileSystem {
-                system_name: Some("render_system".to_string()),
-                duration: Some(Duration::from_secs(3)),
+                system_name: "render_system".to_string(),
+                duration_ms: Some(Duration::from_secs(3).as_millis() as u64),
+                track_allocations: None,
             },
             Duration::from_millis(3000),
         ),
@@ -431,16 +433,17 @@ async fn test_ml_pipeline_performance() -> Result<()> {
                     include_scheduling: Some(true),
                 },
                 1 => DebugCommand::InspectEntity {
-                    entity_id: (cmd_idx % 1000) as u32,
+                    entity_id: (cmd_idx % 1000) as u64,
                     include_metadata: Some(true),
                     include_relationships: Some(false),
                 },
                 2 => DebugCommand::ProfileSystem {
-                    system_name: Some(format!("system_{}", cmd_idx % 10)),
-                    duration: Some(Duration::from_secs(1)),
+                    system_name: format!("system_{}", cmd_idx % 10),
+                    duration_ms: Some(1000),
+                    track_allocations: None,
                 },
                 _ => DebugCommand::ValidateQuery {
-                    query: format!("test_query_{}", cmd_idx),
+                    params: json!({ "query": format!("test_query_{}", cmd_idx) }),
                 },
             };
 
@@ -467,9 +470,12 @@ async fn test_ml_pipeline_performance() -> Result<()> {
         let context = SuggestionContext {
             session_id: format!("perf_suggestion_test_{}", i),
             recent_commands: vec![
-                DebugCommand::GetSystemInfo,
+                DebugCommand::GetSystemInfo {
+                    system_name: None,
+                    include_scheduling: None,
+                },
                 DebugCommand::InspectEntity {
-                    entity_id: i as u32,
+                    entity_id: i as u64,
                     include_metadata: Some(true),
                     include_relationships: Some(false),
                 },
@@ -541,7 +547,7 @@ async fn test_ml_error_handling() -> Result<()> {
     };
 
     // Should still generate some suggestions (context-aware ones)
-    let suggestions = suggestion_engine.generate_suggestions(&empty_context).await;
+    let _suggestions = suggestion_engine.generate_suggestions(&empty_context).await;
     // May be empty, but shouldn't crash
 
     // Test session end without start

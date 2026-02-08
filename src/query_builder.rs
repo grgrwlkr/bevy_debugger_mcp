@@ -223,6 +223,12 @@ pub struct QueryValidator {
     known_components: HashSet<String>,
 }
 
+impl Default for QueryValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QueryValidator {
     /// Create a new query validator
     pub fn new() -> Self {
@@ -387,6 +393,12 @@ pub struct QueryCostEstimator {
     filter_cost_multiplier: f64,
 }
 
+impl Default for QueryCostEstimator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QueryCostEstimator {
     /// Create a new cost estimator
     pub fn new() -> Self {
@@ -481,6 +493,12 @@ impl QueryCostEstimator {
 /// Query optimizer that provides suggestions for better performance
 #[derive(Debug)]
 pub struct QueryOptimizer;
+
+impl Default for QueryOptimizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl QueryOptimizer {
     /// Create a new query optimizer

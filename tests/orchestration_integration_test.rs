@@ -9,12 +9,11 @@ use bevy_debugger_mcp::mcp_server::McpServer;
 use bevy_debugger_mcp::tool_orchestration::*;
 
 fn create_test_config() -> Config {
-    {
-        let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
-        config
+    Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Default::default()
     }
 }
 

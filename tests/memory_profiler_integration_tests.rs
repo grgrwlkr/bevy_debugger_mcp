@@ -10,10 +10,8 @@ use bevy_debugger_mcp::brp_client::BrpClient;
 use bevy_debugger_mcp::brp_messages::{DebugCommand, DebugResponse};
 use bevy_debugger_mcp::config::Config;
 use bevy_debugger_mcp::debug_command_processor::DebugCommandProcessor;
-use bevy_debugger_mcp::error::{Error, Result};
 use bevy_debugger_mcp::memory_profiler::{MemoryProfiler, MemoryProfilerConfig};
 use bevy_debugger_mcp::memory_profiler_processor::MemoryProfilerProcessor;
-use serde_json::json;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -21,12 +19,11 @@ use tokio::time::sleep;
 
 /// Helper to create test configuration
 fn create_test_config() -> Config {
-    {
-        let mut config = Config::default();
-        config.bevy_brp_host = "localhost".to_string();
-        config.bevy_brp_port = 15702;
-        config.mcp_port = 3000;
-        config
+    Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Default::default()
     }
 }
 
@@ -72,7 +69,6 @@ async fn test_allocation_tracking() {
             1024,
             Some(vec!["test_function1".to_string()]),
         )
-        .await
         .unwrap();
 
     let allocation2 = profiler
@@ -81,7 +77,6 @@ async fn test_allocation_tracking() {
             2048,
             Some(vec!["test_function2".to_string()]),
         )
-        .await
         .unwrap();
 
     assert!(allocation1 > 0);
@@ -95,7 +90,7 @@ async fn test_allocation_tracking() {
     assert_eq!(profile.allocations_per_system["TestSystem2"], 2048);
 
     // Test deallocation
-    profiler.record_deallocation(allocation1).await.unwrap();
+    profiler.record_deallocation(allocation1).unwrap();
 
     let profile_after_dealloc = profiler.get_memory_profile().await.unwrap();
     assert_eq!(profile_after_dealloc.total_allocated, 2048);
@@ -109,12 +104,12 @@ async fn test_allocation_tracking() {
 async fn test_entity_count_tracking() {
     let profiler = create_test_memory_profiler();
 
-    profiler.update_entity_count(100).await;
+    profiler.update_entity_count(100);
 
     let snapshot = profiler.take_snapshot().await.unwrap();
     assert_eq!(snapshot.entity_count, 100);
 
-    profiler.update_entity_count(150).await;
+    profiler.update_entity_count(150);
 
     let snapshot2 = profiler.take_snapshot().await.unwrap();
     assert_eq!(snapshot2.entity_count, 150);
@@ -124,8 +119,8 @@ async fn test_entity_count_tracking() {
 async fn test_resource_memory_tracking() {
     let profiler = create_test_memory_profiler();
 
-    profiler.update_resource_memory("Textures", 1024000).await;
-    profiler.update_resource_memory("Meshes", 512000).await;
+    profiler.update_resource_memory("Textures", 1024000);
+    profiler.update_resource_memory("Meshes", 512000);
 
     let snapshot = profiler.take_snapshot().await.unwrap();
     assert_eq!(snapshot.resource_footprint["Textures"], 1024000);
@@ -140,9 +135,8 @@ async fn test_memory_snapshots() {
     for i in 0..5 {
         profiler
             .record_allocation("TestSystem", 1000 * (i + 1), None)
-            .await
             .unwrap();
-        profiler.update_entity_count(10 * (i + 1)).await;
+        profiler.update_entity_count(10 * (i + 1));
         profiler.take_snapshot().await.unwrap();
         sleep(Duration::from_millis(10)).await;
     }
@@ -168,18 +162,14 @@ async fn test_leak_detection() {
                 1024,
                 Some(vec![format!("leaked_function_{}", i)]),
             )
-            .await
             .unwrap();
         leak_allocations.push(allocation_id);
     }
 
     // Make some legitimate allocations and deallocate them
-    for i in 0..10 {
-        let allocation_id = profiler
-            .record_allocation("GoodSystem", 512, None)
-            .await
-            .unwrap();
-        profiler.record_deallocation(allocation_id).await.unwrap();
+    for _i in 0..10 {
+        let allocation_id = profiler.record_allocation("GoodSystem", 512, None).unwrap();
+        profiler.record_deallocation(allocation_id).unwrap();
     }
 
     // Manually adjust timestamps to make allocations appear old
@@ -209,7 +199,6 @@ async fn test_trend_analysis() {
     for i in 1..=8 {
         profiler
             .record_allocation("GrowingSystem", i * 1000, None)
-            .await
             .unwrap();
         profiler.take_snapshot().await.unwrap();
         sleep(Duration::from_millis(20)).await; // Give time for different timestamps
@@ -219,12 +208,10 @@ async fn test_trend_analysis() {
     for _i in 1..=5 {
         let allocation_id = profiler
             .record_allocation("StableSystem", 5000, None)
-            .await
             .unwrap();
-        profiler.record_deallocation(allocation_id).await.unwrap();
+        profiler.record_deallocation(allocation_id).unwrap();
         profiler
             .record_allocation("StableSystem", 5000, None)
-            .await
             .unwrap();
         profiler.take_snapshot().await.unwrap();
         sleep(Duration::from_millis(20)).await;
@@ -259,10 +246,9 @@ async fn test_overhead_monitoring() {
     for i in 0..1000 {
         let allocation_id = profiler
             .record_allocation("BusySystem", i * 10, None)
-            .await
             .unwrap();
         if i % 2 == 0 {
-            profiler.record_deallocation(allocation_id).await.unwrap();
+            profiler.record_deallocation(allocation_id).unwrap();
         }
         if i % 100 == 0 {
             profiler.take_snapshot().await.unwrap();

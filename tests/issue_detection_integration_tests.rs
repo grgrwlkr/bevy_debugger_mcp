@@ -11,14 +11,11 @@ use bevy_debugger_mcp::brp_client::BrpClient;
 use bevy_debugger_mcp::brp_messages::{DebugCommand, DebugResponse};
 use bevy_debugger_mcp::config::Config;
 use bevy_debugger_mcp::debug_command_processor::DebugCommandProcessor;
-use bevy_debugger_mcp::error::{Error, Result};
 use bevy_debugger_mcp::issue_detector::{
-    constants, DetectionRule, IssueAlert, IssueDetector, IssueDetectorConfig, IssuePattern,
-    IssueSeverity,
+    constants, DetectionRule, IssueDetector, IssueDetectorConfig, IssuePattern, IssueSeverity,
 };
 use bevy_debugger_mcp::issue_detector_processor::IssueDetectorProcessor;
 use serde_json::json;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -26,11 +23,12 @@ use tokio::time::sleep;
 
 /// Helper to create test configuration
 fn create_test_config() -> Config {
-    let mut config = Config::default();
-    config.bevy_brp_host = "localhost".to_string();
-    config.bevy_brp_port = 15702;
-    config.mcp_port = 3000;
-    config
+    Config {
+        bevy_brp_host: "localhost".to_string(),
+        bevy_brp_port: 15702,
+        mcp_port: 3000,
+        ..Config::default()
+    }
 }
 
 /// Helper to create test issue detector
@@ -149,9 +147,8 @@ async fn test_all_issue_patterns_detected() {
     let mut detected_count = 0;
     for pattern in patterns {
         let alert = detector.detect_issue(pattern.clone()).await.unwrap();
-        if alert.is_some() {
+        if let Some(alert) = alert {
             detected_count += 1;
-            let alert = alert.unwrap();
             assert!(
                 !alert.remediation.is_empty(),
                 "Pattern {:?} should have remediation",
@@ -302,11 +299,13 @@ async fn test_rule_configuration() {
     let detector = create_test_detector();
 
     // Update a detection rule
-    let mut rule = DetectionRule::default();
-    rule.name = "test_rule".to_string();
-    rule.enabled = false;
-    rule.sensitivity = 0.8;
-    rule.min_occurrences = 3;
+    let rule = DetectionRule {
+        name: "test_rule".to_string(),
+        enabled: false,
+        sensitivity: 0.8,
+        min_occurrences: 3,
+        ..DetectionRule::default()
+    };
 
     detector
         .update_rule("test_rule".to_string(), rule.clone())
@@ -318,7 +317,7 @@ async fn test_rule_configuration() {
     assert!(rules.contains_key("test_rule"));
 
     let updated_rule = &rules["test_rule"];
-    assert_eq!(updated_rule.enabled, false);
+    assert!(!updated_rule.enabled);
     assert_eq!(updated_rule.sensitivity, 0.8);
     assert_eq!(updated_rule.min_occurrences, 3);
 }
@@ -439,8 +438,8 @@ async fn test_processor_alert_retrieval() {
             let alerts = data.as_array().unwrap();
             // We should have detected at least one issue (some might be throttled)
             assert!(
-                !alerts.is_empty() || alerts.len() >= 0,
-                "Should have at least attempted detection"
+                alerts.len() <= constants::MAX_ALERT_HISTORY,
+                "Alert history should not exceed max size"
             );
         }
         _ => panic!("Expected Success response with data"),
@@ -463,7 +462,7 @@ async fn test_processor_rule_updates() {
     // Verify rule was updated
     let rules = processor.get_detection_rules().await;
     if let Some(rule) = rules.get("memory_leak") {
-        assert_eq!(rule.enabled, false);
+        assert!(!rule.enabled);
         assert_eq!(rule.sensitivity, 0.9);
     }
 }

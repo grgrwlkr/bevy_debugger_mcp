@@ -301,10 +301,11 @@ impl PerformanceMetric {
 }
 
 /// Strategy for generating test variations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum VariationStrategy {
     /// No variations - run base test only
+    #[default]
     None,
     /// Random variations within bounds
     Random {
@@ -330,12 +331,6 @@ pub enum VariationStrategy {
         max_mutations: usize,
         mutation_probability: f64,
     },
-}
-
-impl Default for VariationStrategy {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl VariationStrategy {

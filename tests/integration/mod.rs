@@ -7,7 +7,5 @@
 /// - Acceptance criteria verification
 pub mod harness;
 
-pub use harness::{
-    AcceptanceCriteria, CommandCoverage, IntegrationTestHarness, MockBrpClient, PerformanceMetrics,
-    TestConfig,
-};
+#[allow(unused_imports)]
+pub use harness::IntegrationTestHarness;

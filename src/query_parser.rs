@@ -32,6 +32,7 @@ pub struct RegexQueryParser {
 struct QueryPattern {
     pattern: Regex,
     builder: fn(&regex::Captures) -> Result<BrpRequest>,
+    #[allow(dead_code)]
     description: &'static str,
 }
 

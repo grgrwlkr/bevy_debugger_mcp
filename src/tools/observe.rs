@@ -4,7 +4,7 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::bevy_reflection::{BevyReflectionInspector, ReflectionInspectionResult};
+use crate::bevy_reflection::BevyReflectionInspector;
 use crate::brp_client::BrpClient;
 use crate::brp_messages::{BrpResponse, BrpResult, EntityData};
 use crate::error::{Error, Result};
@@ -163,6 +163,12 @@ fn get_observe_state() -> Arc<RwLock<ObserveState>> {
 /// Returns error if query parsing fails, BRP communication fails, or response formatting fails
 pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Result<Value> {
     debug!("Observe tool called with arguments: {}", arguments);
+
+    if !arguments.is_object() {
+        return Err(Error::Validation(
+            "Observe arguments must be a JSON object".to_string(),
+        ));
+    }
 
     let query = arguments
         .get("query")
@@ -359,9 +365,9 @@ pub async fn handle(arguments: Value, brp_client: Arc<RwLock<BrpClient>>) -> Res
                         let mut state_guard = state.write().await;
                         let current_snapshot = state_guard.add_snapshot(entities.clone());
 
-                        if diff_target.starts_with("history:") {
+                        if let Some(stripped) = diff_target.strip_prefix("history:") {
                             // Parse history index with bounds checking
-                            if let Ok(index) = diff_target[8..].parse::<usize>() {
+                            if let Ok(index) = stripped.parse::<usize>() {
                                 if index < state_guard.snapshots_history.len() {
                                     state_guard.diff_against_history(&current_snapshot, index)
                                 } else {
@@ -492,6 +498,7 @@ mod tests {
             bevy_brp_host: "localhost".to_string(),
             bevy_brp_port: 15702,
             mcp_port: 3000,
+            ..Config::default()
         };
         let brp_client = Arc::new(RwLock::new(crate::brp_client::BrpClient::new(&config)));
 
@@ -508,6 +515,7 @@ mod tests {
             bevy_brp_host: "localhost".to_string(),
             bevy_brp_port: 15702,
             mcp_port: 3000,
+            ..Config::default()
         };
         let brp_client = Arc::new(RwLock::new(crate::brp_client::BrpClient::new(&config)));
 

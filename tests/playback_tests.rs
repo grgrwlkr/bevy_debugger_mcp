@@ -205,8 +205,10 @@ async fn test_step_operations() {
     controller.load_recording(recording).await.unwrap();
 
     // Create a mock BRP client
-    let mut config = Config::default();
-    config.mcp_port = 3000;
+    let config = Config {
+        mcp_port: 3000,
+        ..Default::default()
+    };
     let mut brp_client = BrpClient::new(&config);
 
     // Test stepping forward
@@ -265,8 +267,10 @@ async fn test_seek_to_marker() {
 async fn test_interpolated_sync_strategy() {
     let sync = InterpolatedSync::new(0.5);
 
-    let mut config = Config::default();
-    config.mcp_port = 3000;
+    let config = Config {
+        mcp_port: 3000,
+        ..Default::default()
+    };
     let mut brp_client = BrpClient::new(&config);
 
     let frame = Frame {

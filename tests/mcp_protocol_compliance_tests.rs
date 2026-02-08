@@ -15,11 +15,11 @@ use bevy_debugger_mcp::{
     brp_client::BrpClient, config::Config, error::Error as BevyDebuggerError,
     mcp_server_v2::McpServerV2, mcp_tools::BevyDebuggerTools,
 };
-use rmcp::{handler::server::ServerHandler, model::*, Error as McpError};
-use serde_json::{json, Value};
+use rmcp::model::*;
+use rmcp::Service;
+use serde_json::json;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::RwLock, time::timeout};
-use tokio_test;
 
 // Test fixtures and helpers
 mod test_fixtures {
@@ -83,10 +83,7 @@ mod protocol_compliance {
 
         // Test that server declares proper protocol version
         // Note: Version mismatch would be handled at transport layer in real implementation
-        assert!(matches!(
-            server_info.protocol_version,
-            ProtocolVersion::V_2024_11_05
-        ));
+        assert_eq!(server_info.protocol_version, ProtocolVersion::V_2024_11_05);
     }
 
     /// Test Matrix: server_capabilities - Verify all expected capabilities
@@ -97,12 +94,6 @@ mod protocol_compliance {
 
         // Verify tools capability
         assert!(server_info.capabilities.tools.is_some());
-
-        // Verify logging capability if present
-        if let Some(logging) = server_info.capabilities.logging {
-            // Validate logging levels if supported
-            assert!(!logging.is_empty());
-        }
 
         // Test that server can handle all required MCP operations
         assert!(server_info.capabilities.tools.is_some());
@@ -133,15 +124,15 @@ mod tool_integration {
 
         match result {
             Ok(call_result) => {
-                assert!(call_result.content.len() > 0);
+                assert!(!call_result.content.is_empty());
                 // Verify the response structure is valid
                 if let Some(text_content) = call_result.content.first() {
-                    assert!(matches!(text_content, ToolContent::Text { .. }));
+                    assert!(matches!(text_content.raw, RawContent::Text(_)));
                 }
             }
             Err(e) => {
                 // Connection errors are acceptable in test environment
-                assert!(matches!(e, McpError::InternalError(_)));
+                assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
             }
         }
     }
@@ -160,11 +151,11 @@ mod tool_integration {
 
         match result {
             Ok(call_result) => {
-                assert!(call_result.content.len() > 0);
+                assert!(!call_result.content.is_empty());
             }
             Err(e) => {
                 // Connection errors are acceptable in test environment
-                assert!(matches!(e, McpError::InternalError(_)));
+                assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
             }
         }
     }
@@ -175,19 +166,22 @@ mod tool_integration {
 
         let request = HypothesisRequest {
             hypothesis: "Entity count affects frame rate".to_string(),
-            test_type: Some("performance".to_string()),
-            expected_outcome: Some("Higher entity count = lower FPS".to_string()),
+            confidence: 0.8,
+            context: Some(json!({
+                "test_type": "performance",
+                "expected_outcome": "Higher entity count = lower FPS"
+            })),
         };
 
         let result = tools.hypothesis(Parameters(request)).await;
 
         match result {
             Ok(call_result) => {
-                assert!(call_result.content.len() > 0);
+                assert!(!call_result.content.is_empty());
             }
             Err(e) => {
                 // Connection errors are acceptable in test environment
-                assert!(matches!(e, McpError::InternalError(_)));
+                assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
             }
         }
     }
@@ -197,20 +191,20 @@ mod tool_integration {
         let tools = create_test_tools();
 
         let request = AnomalyRequest {
-            system: Some("entities".to_string()),
-            threshold: Some(100.0),
-            window_size: Some(10),
+            detection_type: "entities".to_string(),
+            sensitivity: 0.7,
+            window: Some(10.0),
         };
 
         let result = tools.detect_anomaly(Parameters(request)).await;
 
         match result {
             Ok(call_result) => {
-                assert!(call_result.content.len() > 0);
+                assert!(!call_result.content.is_empty());
             }
             Err(e) => {
                 // Connection errors are acceptable in test environment
-                assert!(matches!(e, McpError::InternalError(_)));
+                assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
             }
         }
     }
@@ -230,11 +224,11 @@ mod tool_integration {
 
         match result {
             Ok(call_result) => {
-                assert!(call_result.content.len() > 0);
+                assert!(!call_result.content.is_empty());
             }
             Err(e) => {
                 // Connection errors are acceptable in test environment
-                assert!(matches!(e, McpError::InternalError(_)));
+                assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
             }
         }
     }
@@ -245,19 +239,19 @@ mod tool_integration {
 
         let request = ReplayRequest {
             action: "list".to_string(),
-            session_id: None,
-            timestamp: None,
+            checkpoint_id: None,
+            speed: 1.0,
         };
 
         let result = tools.replay(Parameters(request)).await;
 
         match result {
             Ok(call_result) => {
-                assert!(call_result.content.len() > 0);
+                assert!(!call_result.content.is_empty());
             }
             Err(e) => {
                 // Connection errors are acceptable in test environment
-                assert!(matches!(e, McpError::InternalError(_)));
+                assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
             }
         }
     }
@@ -280,8 +274,8 @@ mod tool_integration {
         assert!(
             result.is_ok()
                 || matches!(
-                    result.unwrap_err(),
-                    McpError::InvalidParams(_) | McpError::InternalError(_)
+                    result.unwrap_err().code,
+                    ErrorCode::INVALID_PARAMS | ErrorCode::INTERNAL_ERROR
                 )
         );
     }
@@ -313,8 +307,8 @@ mod error_handling {
         // Should handle gracefully - either succeed with validation or return proper error
         if let Err(e) = result {
             assert!(matches!(
-                e,
-                McpError::InvalidParams(_) | McpError::InternalError(_)
+                e.code,
+                ErrorCode::INVALID_PARAMS | ErrorCode::INTERNAL_ERROR
             ));
         }
     }
@@ -338,8 +332,8 @@ mod error_handling {
         // Should handle gracefully
         if let Err(e) = result {
             assert!(matches!(
-                e,
-                McpError::InvalidParams(_) | McpError::InternalError(_)
+                e.code,
+                ErrorCode::INVALID_PARAMS | ErrorCode::INTERNAL_ERROR
             ));
         }
     }
@@ -369,7 +363,7 @@ mod error_handling {
         // Should return connection error
         assert!(result.is_err());
         if let Err(e) = result {
-            assert!(matches!(e, McpError::InternalError(_)));
+            assert_eq!(e.code, ErrorCode::INTERNAL_ERROR);
         }
     }
 }
@@ -436,11 +430,10 @@ mod load_testing {
         match result {
             Ok(call_result) => {
                 // Operation completed within timeout
-                assert!(call_result.is_ok() || call_result.is_err());
+                let _ = call_result;
             }
             Err(_) => {
                 // Timeout occurred - this is acceptable behavior
-                assert!(true);
             }
         }
     }
@@ -482,7 +475,6 @@ mod load_testing {
         // At least some requests should complete (even if game isn't running)
         // The important thing is that the system doesn't crash under load
         println!("Completed {} out of 50 rapid requests", success_count);
-        assert!(success_count >= 0); // Should not panic under load
     }
 }
 
@@ -497,16 +489,9 @@ mod security_validation {
     async fn test_security_manager_integration() {
         let server_result = create_test_server().await;
 
-        match server_result {
-            Ok(_server) => {
-                // Security manager should be properly initialized
-                assert!(true);
-            }
-            Err(e) => {
-                // Security initialization errors should be handled properly
-                println!("Security manager initialization: {:?}", e);
-                assert!(true); // Security errors are acceptable in test environment
-            }
+        if let Err(e) = server_result {
+            // Security initialization errors should be handled properly
+            println!("Security manager initialization: {:?}", e);
         }
     }
 
@@ -580,35 +565,15 @@ mod performance_validation {
         }
 
         // If we get here without OOM, memory usage is stable
-        assert!(true);
     }
 }
 
 // Integration Test Matrix Summary
 #[cfg(test)]
 mod test_matrix_validation {
-    use super::*;
-
     /// Validate that all required test matrix components are covered
     #[test]
     fn test_matrix_completeness() {
-        // Protocol Compliance Matrix
-        assert!(true); // handshake_success ✓
-        assert!(true); // handshake_version_mismatch ✓
-
-        // Tool Integration Matrix
-        assert!(true); // tool_invocation_all (6 tools) ✓
-        assert!(true); // tool_parameter_validation ✓
-
-        // Error Handling Matrix
-        assert!(true); // malformed_requests ✓
-        assert!(true); // invalid_parameters ✓
-
-        // Load Testing Matrix
-        assert!(true); // concurrent_operations ✓
-        assert!(true); // connection_loss_recovery ✓
-        assert!(true); // rate_limiting ✓
-
         println!("✅ MCP Integration Test Suite - All test matrix components implemented");
         println!("📊 Test Coverage:");
         println!("   • Protocol Compliance: handshake scenarios, capabilities validation");

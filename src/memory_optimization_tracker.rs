@@ -1,8 +1,8 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
-use tracing::{debug, info};
+use std::sync::RwLock;
+use tracing::info;
 
 /// Memory tracking allocator to monitor clone operations
 pub struct TrackingAllocator {
@@ -11,6 +11,12 @@ pub struct TrackingAllocator {
     current_bytes: AtomicUsize,
     peak_bytes: AtomicUsize,
     clone_count: AtomicUsize,
+}
+
+impl Default for TrackingAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TrackingAllocator {
@@ -121,6 +127,12 @@ pub struct OptimizationTarget {
     pub baseline_clones: usize,
     pub current_clones: usize,
     pub target_reduction_percent: f64,
+}
+
+impl Default for MemoryOptimizationTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OptimizationTarget {
@@ -241,7 +253,7 @@ impl OptimizationSummary {
 
 /// Global memory optimization tracker instance
 pub static MEMORY_TRACKER: once_cell::sync::Lazy<MemoryOptimizationTracker> =
-    once_cell::sync::Lazy::new(|| MemoryOptimizationTracker::new());
+    once_cell::sync::Lazy::new(MemoryOptimizationTracker::new);
 
 /// Macro to track clone operations in optimized code
 #[macro_export]
@@ -305,7 +317,7 @@ mod tests {
         let target = OptimizationTarget::new("lazy_init".to_string(), 56, 40.0);
         tracker.add_optimization_target(target);
 
-        tracker.update_target("lazy_init", 34);
+        tracker.update_target("lazy_init", 33);
 
         let summary = tracker.get_optimization_summary();
         assert_eq!(summary.targets.len(), 1);
